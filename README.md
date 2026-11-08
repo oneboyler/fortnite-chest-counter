@@ -4,6 +4,10 @@ A small see-through overlay that counts the chests you open or break in Fortnite
 
 It sits in the tray and updates a few seconds after each game ends.
 
+![The overlay: numbers page and graph page (Ctrl+F8)](docs/overlay.png)
+
+*Left: the numbers page, with the gold dot showing you're in a game. Right: chests per game (Ctrl+F8). Only the background is see-through; the numbers stay solid.*
+
 ## Download
 
 Get **ChestCounter-win-x64.zip** from [Releases](https://github.com/oneboyler/fortnite-chest-counter/releases/latest), unzip it anywhere (not in Program Files) and run **Chest Counter.exe**. There's nothing to install.
@@ -13,6 +17,8 @@ Windows may say "Windows protected your PC" the first time, because the app isn'
 On the first start, a setup window checks two things and explains the keys:
 - **Replays:** Fortnite must record them. In Fortnite, turn this on under Settings > Game > Replays (Record Replays).
 - **Window mode:** Fortnite needs Windowed Fullscreen. The overlay can't show over real Fullscreen.
+
+<img src="docs/setup.png" alt="The setup window on first start" width="440">
 
 ## Keys
 

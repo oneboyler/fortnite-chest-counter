@@ -38,7 +38,7 @@ public sealed class GameWatcher
     {
         Scanner = new Scanner(replayDir, dataDir);
         Snapshot = Scanner.Matches.Values.ToList();
-        _interval = interval ?? TimeSpan.FromSeconds(10);
+        _interval = interval ?? TimeSpan.FromSeconds(5);
     }
 
     /// <param name="initialScan">Read all replays that aren't cached yet before watching.</param>

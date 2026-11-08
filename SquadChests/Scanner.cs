@@ -82,5 +82,21 @@ public class Scanner
     /// A replay is still being written while Fortnite is in that match. We treat it as in progress if it was
     /// modified in the last 90 seconds; the replay's own "live" flag is checked after reading as well.
     /// </summary>
-    public static bool LooksInProgress(FileInfo f) => DateTime.UtcNow - f.LastWriteTimeUtc < TimeSpan.FromSeconds(90);
+    public static bool LooksInProgress(FileInfo f) =>
+        DateTime.UtcNow - f.LastWriteTimeUtc < TimeSpan.FromSeconds(5) || IsLocked(f);
+
+    /// <summary>
+    /// Fortnite keeps the replay open for writing until you leave the match. As soon as it lets go, the game is over
+    /// and the file can be read (no need to wait for it to sit unchanged for a while).
+    /// </summary>
+    static bool IsLocked(FileInfo f)
+    {
+        try
+        {
+            using var s = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return false;
+        }
+        catch (IOException) { return true; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
 }

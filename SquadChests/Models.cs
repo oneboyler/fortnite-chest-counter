@@ -15,7 +15,7 @@ public class MatchResult
     public int? TeamPlacement { get; set; }
 
     /// <summary>Bumped when the reader starts recording something new, so cached replays get re-read once.</summary>
-    public const int CurrentReaderVersion = 5;
+    public const int CurrentReaderVersion = 6;
     public int ReaderVersion { get; set; }
     /// <summary>You got at least one season treasure (gizmo, jam track, car...) this game. Null = read by an older version.</summary>
     public bool? GotTreasure { get; set; }

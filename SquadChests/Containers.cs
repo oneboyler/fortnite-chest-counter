@@ -48,14 +48,39 @@ public class BuriedChestExport : ContainerExport
 [NetFieldExportGroup("/SpritePosters/Blueprints/Items/Booty/B_SpritePosters_Booty_Chest.B_SpritePosters_Booty_Chest_C", minimalParseMode: ParseMode.Minimal)]
 public class BootyChestExport : ContainerExport { }
 
+// Season variants with their own class (the replay names the exact class, so each needs its own entry).
+[NetFieldExportGroup("/SpritePosters/Gameplay/RelicChests/B_Delilah_TieredChest_Relics_Variant1.B_Delilah_TieredChest_Relics_Variant1_C", minimalParseMode: ParseMode.Minimal)]
+public class RelicChestV1Export : ContainerExport { }
+
+[NetFieldExportGroup("/SpritePosters/Gameplay/RelicChests/B_Delilah_TieredChest_Relics_Variant2.B_Delilah_TieredChest_Relics_Variant2_C", minimalParseMode: ParseMode.Minimal)]
+public class RelicChestV2Export : ContainerExport { }
+
+[NetFieldExportGroup("/ExtractionRelicFinder/Gameplay/Chests/B_Athena_BuriedChest_RelicFinder.B_Athena_BuriedChest_RelicFinder_C", minimalParseMode: ParseMode.Minimal)]
+public class RelicFinderChestExport : ContainerExport
+{
+    [NetFieldExport("DugUp", RepLayoutCmdType.PropertyBool)]
+    public bool? DugUp { get; set; }
+}
+
+[NetFieldExportGroup("/SpritePosters/Blueprints/Items/Booty/B_SpritePosters_Booty_Chest_Variant1.B_SpritePosters_Booty_Chest_Variant1_C", minimalParseMode: ParseMode.Minimal)]
+public class BootyChestV1Export : ContainerExport { }
+
+[NetFieldExportGroup("/SpritePosters/Blueprints/Items/Booty/B_SpritePosters_Booty_Chest_Variant2.B_SpritePosters_Booty_Chest_Variant2_C", minimalParseMode: ParseMode.Minimal)]
+public class BootyChestV2Export : ContainerExport { }
+
+// Checked and left out on purpose (Nov 2026, 102 replays):
+//   Tiered_Chest_5_Child: never opened by anyone in 15 sightings, only broken -> decoration, not a lootable chest.
+//   BGA_DelilahTreasureHuntAnimatedChest, BP_ExtractionSite_Chest_Relic, BGA_ExtractionPointGameplay_Chest: never searchable.
+//   Loot cannons, supply drops, ammo boxes, barrels, crates: not chests.
+
 public static class ChestKinds
 {
     public static string Of(ContainerExport c) => c switch
     {
         RareChestExport => "Rare Chest",
-        RelicChestExport => "Relic Chest",
-        BuriedChestExport => "Buried Treasure",
-        BootyChestExport => "Booty Chest",
+        RelicChestExport or RelicChestV1Export or RelicChestV2Export => "Relic Chest",
+        BuriedChestExport or RelicFinderChestExport => "Buried Treasure",
+        BootyChestExport or BootyChestV1Export or BootyChestV2Export => "Booty Chest",
         _ => "Chest",
     };
 }

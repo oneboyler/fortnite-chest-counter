@@ -13,7 +13,7 @@ sealed class TrayApp : ApplicationContext
     readonly OverlayForm _overlay;
     readonly NotifyIcon _tray;
     readonly ContextMenuStrip _menu;
-    readonly ToolStripMenuItem _miShow, _miMove, _miGraph, _miNotify, _miStartup;
+    readonly ToolStripMenuItem _miShow, _miMove, _miCompact, _miGraph, _miNotify, _miStartup;
     readonly System.Windows.Forms.Timer _keys, _clock;
     readonly DateTime _startedAt = DateTime.Now;
 
@@ -35,8 +35,9 @@ sealed class TrayApp : ApplicationContext
         // ---- menu (tray icon right-click, and overlay right-click in move mode) ----
         _miShow = new ToolStripMenuItem("Hide overlay", null, (_, _) => ToggleVisible()) { ShortcutKeyDisplayString = "F8" };
         _miMove = new ToolStripMenuItem("Move overlay", null, (_, _) => ToggleMove()) { ShortcutKeyDisplayString = "Shift+F8" };
-        // pages: numbers / graph (Ctrl+F8 switches)
-        _miGraph = new ToolStripMenuItem("Show graph", null, (_, _) => NextPage()) { ShortcutKeyDisplayString = "Ctrl+F8" };
+        // pages: full / compact / graph (Ctrl+F8 cycles through them)
+        _miCompact = new ToolStripMenuItem("Compact view", null, (_, _) => SetPage(_settings.Page == Settings.PageCompact ? Settings.PageFull : Settings.PageCompact)) { ShortcutKeyDisplayString = "Ctrl+F8" };
+        _miGraph = new ToolStripMenuItem("Show graph", null, (_, _) => SetPage(_settings.Page == Settings.PageGraph ? Settings.PageFull : Settings.PageGraph)) { ShortcutKeyDisplayString = "Ctrl+F8" };
         _miNotify = new ToolStripMenuItem("Windows pop-up after each game", null, (_, _) =>
         {
             _settings.NotifyAfterGame = !_settings.NotifyAfterGame;
@@ -50,7 +51,7 @@ sealed class TrayApp : ApplicationContext
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(new ToolStripItem[]
         {
-            _miShow, _miMove, _miGraph,
+            _miShow, _miMove, _miCompact, _miGraph,
             new ToolStripMenuItem("New session", null, (_, _) => NewSession()),
             new ToolStripSeparator(),
             _miNotify, _miStartup,
@@ -66,7 +67,8 @@ sealed class TrayApp : ApplicationContext
         {
             _miShow.Text = _overlay!.Visible ? "Hide overlay" : "Show overlay";
             _miMove.Checked = _overlay.Moving;
-            _miGraph.Checked = _settings.Page == 1;
+            _miCompact.Checked = _settings.Page == Settings.PageCompact;
+            _miGraph.Checked = _settings.Page == Settings.PageGraph;
             _miNotify.Checked = _settings.NotifyAfterGame;
             _miStartup.Checked = StartWithWindows.IsOn();
         };
@@ -125,7 +127,7 @@ sealed class TrayApp : ApplicationContext
         _setup = new SetupForm(_watcher.Scanner.ReplayDir, _settings.SetupDone ? StartWithWindows.IsOn() : true);
         _setup.FormClosed += (_, _) =>
         {
-            try { if (_setup!.StartWithWindowsBox.Checked != StartWithWindows.IsOn()) StartWithWindows.Set(_setup.StartWithWindowsBox.Checked); }
+            try { if (_setup!.StartWithWindowsChecked != StartWithWindows.IsOn()) StartWithWindows.Set(_setup.StartWithWindowsChecked); }
             catch (Exception ex) { MessageBox.Show("Couldn't change \"Start with Windows\": " + ex.Message, "Chest Counter"); }
             _settings.SetupDone = true;
             _settings.Save(_dataDir);

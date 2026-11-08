@@ -1,4 +1,4 @@
-namespace ChestCounter;
+﻿namespace ChestCounter;
 
 /// <summary>What the setup window can find out on its own.</summary>
 static class SetupChecks
@@ -45,131 +45,409 @@ static class SetupChecks
     }
 }
 
-/// <summary>First-start window: checks Fortnite's settings and explains the keys. Reopen from the tray menu.</summary>
+/// <summary>
+/// First-start window: checks Fortnite's settings and explains the keys. Reopen from the tray menu.
+/// Drawn by hand in the same glass style as the overlay (rounded, see-through), so it has its own
+/// little buttons and checkbox instead of standard Windows controls.
+/// </summary>
 sealed class SetupForm : Form
 {
     readonly string _replayDir;
-    readonly FlowLayoutPanel _checks;
-    public CheckBox StartWithWindowsBox { get; }
+    SetupChecks.Check[] _checks = [];
+    public bool StartWithWindowsChecked { get; private set; }
+
+    // clickable areas from the last layout, and what the mouse is over / pressed on
+    readonly Dictionary<string, Rectangle> _hits = new();
+    string? _hover, _pressed;
+
+    Font _title = null!, _sub = null!, _section = null!, _bold = null!, _text = null!, _key = null!, _btn = null!, _symbol = null!;
+    float _fontsFor;
+
+    float K => DeviceDpi / 96f;
+    int Px(float v) => (int)Math.Round(v * K);
 
     public SetupForm(string replayDir, bool startWithWindows)
     {
         _replayDir = replayDir;
+        StartWithWindowsChecked = startWithWindows;
         Text = "Chest Counter - setup";
         Icon = ChestArt.Icon(32);
-        BackColor = OverlayForm.Bg;
-        ForeColor = OverlayForm.Fg;
-        Font = new Font("Segoe UI", 10f);
-        FormBorderStyle = FormBorderStyle.FixedDialog;
-        MaximizeBox = MinimizeBox = false;
-        StartPosition = FormStartPosition.CenterScreen;
-        AutoScaleMode = AutoScaleMode.Dpi;
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
-        Padding = new Padding(18, 14, 18, 14);
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = true;
         TopMost = true;
+        KeyPreview = true;
+        StartPosition = FormStartPosition.Manual;
+        AutoScaleMode = AutoScaleMode.None;
+        _checks = [SetupChecks.Replays(_replayDir), SetupChecks.WindowMode()];
 
-        const int width = 520;
-        var root = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty, Location = new Point(18, 14) };
-        Controls.Add(root);
-
-        Label Para(string s, Font? f = null, Color? c = null, int top = 0) => new()
-        {
-            Text = s, AutoSize = true, MaximumSize = new Size(width, 0), Font = f ?? Font, ForeColor = c ?? OverlayForm.Fg,
-            Margin = new Padding(0, top, 0, 0),
-        };
-        Font Bold(float size) => new("Segoe UI", size, FontStyle.Bold);
-
-        root.Controls.Add(Para("Chest Counter", Bold(16f), OverlayForm.Gold));
-        root.Controls.Add(Para("Counts the chests you open or break and the season treasures you get, " +
-                               "straight from your Fortnite replays. It runs quietly in the tray (the chest icon by the clock).",
-            c: OverlayForm.Dim));
-
-        root.Controls.Add(Para("CHECKS", Bold(9f), OverlayForm.Dim, 14));
-        _checks = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
-        root.Controls.Add(_checks);
-        FillChecks();
-
-        root.Controls.Add(Para("KEYS (work while you play)", Bold(9f), OverlayForm.Dim, 14));
-        foreach (var (key, what) in new[]
-                 {
-                     ("F8", "hide / show the overlay"),
-                     ("Shift+F8", "move it: drag it with the mouse, then Shift+F8 again to lock it"),
-                     ("Ctrl+F8", "switch between the numbers and a graph of your games"),
-                 })
-        {
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 0) };
-            row.Controls.Add(new Label { Text = key, AutoSize = false, Width = 82, Font = Bold(10f), ForeColor = OverlayForm.Gold, Margin = Padding.Empty });
-            row.Controls.Add(new Label { Text = what, AutoSize = true, MaximumSize = new Size(width - 90, 0), Margin = Padding.Empty });
-            root.Controls.Add(row);
-        }
-        root.Controls.Add(Para("Right-click the tray icon for the menu: full report, graph, start with Windows, exit.",
-            c: OverlayForm.Dim, top: 6));
-
-        root.Controls.Add(Para("GOOD TO KNOW", Bold(9f), OverlayForm.Dim, 14));
-        root.Controls.Add(Para("• The first start reads your last ~100 games. That takes about a minute; the overlay shows the progress.", top: 4));
-        root.Controls.Add(Para("• After that, each game is counted a few seconds after it ends. Fortnite locks the replay while you play.", top: 2));
-        root.Controls.Add(Para("• Custom games (fewer than 10 players) are left out.", top: 2));
-
-        StartWithWindowsBox = new CheckBox
-        {
-            Text = "Start with Windows (recommended, so no game gets missed)", Checked = startWithWindows, AutoSize = true,
-            ForeColor = OverlayForm.Fg, Margin = new Padding(0, 14, 0, 0),
-        };
-        root.Controls.Add(StartWithWindowsBox);
-
-        var buttons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 14, 0, 0) };
-        Button Btn(string s, bool primary) => new()
-        {
-            Text = s, AutoSize = true, Padding = new Padding(10, 3, 10, 3), FlatStyle = FlatStyle.Flat,
-            BackColor = primary ? OverlayForm.Gold : ColorTranslator.FromHtml("#1f252c"),
-            ForeColor = primary ? OverlayForm.Bg : OverlayForm.Fg, Font = Bold(10f), Margin = new Padding(0, 0, 10, 0),
-        };
-        var done = Btn("Done", true);
-        done.FlatAppearance.BorderSize = 0;
-        done.Click += (_, _) => Close();
-        var again = Btn("Check again", false);
-        again.FlatAppearance.BorderColor = ColorTranslator.FromHtml("#3d4856");
-        again.Click += (_, _) => FillChecks();
-        buttons.Controls.Add(done);
-        buttons.Controls.Add(again);
-        root.Controls.Add(buttons);
-        AcceptButton = done;
+        Size = Layout(null);
+        var area = Screen.FromPoint(Cursor.Position).WorkingArea;
+        Location = new Point(area.Left + (area.Width - Width) / 2, area.Top + Math.Max(0, (area.Height - Height) / 2));
     }
 
-    void FillChecks()
+    protected override CreateParams CreateParams
     {
-        _checks.SuspendLayout();
-        _checks.Controls.Clear();
-        foreach (var c in new[] { SetupChecks.Replays(_replayDir), SetupChecks.WindowMode() })
+        get
         {
-            var (mark, color) = c.State switch
-            {
-                SetupChecks.State.Ok => ("✓", OverlayForm.Green),
-                SetupChecks.State.Warn => ("!", OverlayForm.Gold),
-                _ => ("✗", OverlayForm.Red),
-            };
-            var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 6, 0, 0) };
-            row.Controls.Add(new Label { Text = mark, AutoSize = false, Width = 24, Font = new Font("Segoe UI Symbol", 12f, FontStyle.Bold), ForeColor = color, Margin = Padding.Empty });
-            var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, AutoSize = true, WrapContents = false, Margin = Padding.Empty };
-            text.Controls.Add(new Label { Text = c.Title, AutoSize = true, MaximumSize = new Size(496, 0), Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = color, Margin = Padding.Empty });
-            text.Controls.Add(new Label { Text = c.Detail, AutoSize = true, MaximumSize = new Size(496, 0), ForeColor = OverlayForm.Dim, Margin = Padding.Empty });
-            row.Controls.Add(text);
-            _checks.Controls.Add(row);
+            var cp = base.CreateParams;
+            cp.ExStyle |= Native.WS_EX_LAYERED;
+            return cp;
         }
-        _checks.ResumeLayout();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Redraw();
+    }
+
+    protected override void OnPaint(PaintEventArgs e) { }
+
+    void Redraw()
+    {
+        if (!IsHandleCreated) return;
+        using var bmp = RenderBitmap();
+        if (Size != bmp.Size) Size = bmp.Size;
+        Glass.Push(this, bmp);
+    }
+
+    Bitmap RenderBitmap()
+    {
+        var bmp = Glass.NewCanvas(Layout(null), out var g);
+        using (g) Layout(g);
+        return bmp;
     }
 
     /// <summary>Build helper: a picture of this window without showing it.</summary>
-    public Bitmap Snapshot()
+    public Bitmap Snapshot() => RenderBitmap();
+
+    // ------------------------------------------------------------------ input
+
+    string? HitTest(Point p) => _hits.FirstOrDefault(h => h.Value.Contains(p)).Key;
+
+    protected override void OnMouseMove(MouseEventArgs e)
     {
-        StartPosition = FormStartPosition.Manual;
-        Location = new Point(-5000, -5000);
-        ShowInTaskbar = false;
-        Show();
-        Application.DoEvents();
-        var bmp = new Bitmap(Width, Height);
-        DrawToBitmap(bmp, new Rectangle(Point.Empty, Size));
-        return bmp;
+        base.OnMouseMove(e);
+        var h = HitTest(e.Location);
+        Cursor = h != null ? Cursors.Hand : Cursors.Default;
+        if (h != _hover) { _hover = h; Redraw(); }
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_hover != null) { _hover = null; Redraw(); }
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button != MouseButtons.Left) return;
+        _pressed = HitTest(e.Location);
+        if (_pressed == null)
+        {
+            // anywhere else: drag the window
+            Native.ReleaseCapture();
+            Native.SendMessage(Handle, Native.WM_NCLBUTTONDOWN, Native.HTCAPTION, IntPtr.Zero);
+        }
+        else Redraw();
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        var was = _pressed;
+        _pressed = null;
+        if (was != null && was == HitTest(e.Location)) Act(was);
+        else Redraw();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode is Keys.Enter or Keys.Escape) Close();
+        else if (e.KeyCode == Keys.Space) Act("startup");
+    }
+
+    void Act(string what)
+    {
+        switch (what)
+        {
+            case "done":
+            case "close":
+                Close();
+                return;
+            case "startup":
+                StartWithWindowsChecked = !StartWithWindowsChecked;
+                break;
+            case "again":
+                _checks = [SetupChecks.Replays(_replayDir), SetupChecks.WindowMode()];
+                break;
+        }
+        Redraw();
+    }
+
+    // ------------------------------------------------------------------ drawing
+
+    void EnsureFonts()
+    {
+        if (_fontsFor == K) return;
+        _fontsFor = K;
+        Font F(string family, float px, FontStyle style)
+        {
+            try { return new Font(family, px * K, style, GraphicsUnit.Pixel); }
+            catch (ArgumentException) { return new Font("Segoe UI", px * K, style, GraphicsUnit.Pixel); }
+        }
+        _title = F("Bahnschrift", 26, FontStyle.Bold);
+        _sub = F("Segoe UI", 13.5f, FontStyle.Regular);
+        _section = F("Segoe UI Semibold", 11, FontStyle.Regular);
+        _bold = F("Segoe UI Semibold", 14, FontStyle.Regular);
+        _text = F("Segoe UI", 13, FontStyle.Regular);
+        _key = F("Segoe UI Semibold", 12, FontStyle.Regular);
+        _btn = F("Segoe UI Semibold", 13.5f, FontStyle.Regular);
+        _symbol = F("Segoe UI", 15, FontStyle.Bold);
+    }
+
+    static readonly StringFormat Typo = MakeFormat(wrap: false), Wrap = MakeFormat(wrap: true);
+    static StringFormat MakeFormat(bool wrap)
+    {
+        var f = (StringFormat)StringFormat.GenericTypographic.Clone();
+        f.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces | StringFormatFlags.NoClip;
+        if (!wrap) f.FormatFlags |= StringFormatFlags.NoWrap;
+        return f;
+    }
+    static readonly Graphics MeasureG = MakeMeasureG();
+    static Graphics MakeMeasureG()
+    {
+        var g = Graphics.FromImage(new Bitmap(1, 1));
+        g.TextRenderingHint = Glass.TextHint;
+        return g;
+    }
+
+    static int TextW(string s, Font f) => (int)Math.Ceiling(MeasureG.MeasureString(s, f, PointF.Empty, Typo).Width);
+
+    static void Str(Graphics? g, string s, Font f, Color c, float x, float y)
+    {
+        if (g == null) return;
+        using var b = new SolidBrush(c);
+        g.DrawString(s, f, b, x, y, Typo);
+    }
+
+    /// <summary>Wrapped paragraph; returns its height.</summary>
+    static int Para(Graphics? g, string s, Font f, Color c, int x, int y, int w)
+    {
+        var h = (int)Math.Ceiling(MeasureG.MeasureString(s, f, w, Wrap).Height);
+        if (g != null)
+        {
+            using var b = new SolidBrush(c);
+            g.DrawString(s, f, b, new RectangleF(x, y, w, h + 4), Wrap);
+        }
+        return h;
+    }
+
+    static void Fill(Graphics? g, RectangleF r, float radius, Color fill, Color? border = null)
+    {
+        if (g == null) return;
+        var smooth = g.SmoothingMode;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using var path = Glass.Rounded(r, radius);
+        using (var b = new SolidBrush(fill)) g.FillPath(b, path);
+        if (border is Color bc) { using var p = new Pen(bc, 1); g.DrawPath(p, path); }
+        g.SmoothingMode = smooth;
+    }
+
+    static readonly Color Line = Color.FromArgb(26, 255, 255, 255);
+
+    /// <summary>Lays out (and draws when g is set) the whole window; returns its size.</summary>
+    Size Layout(Graphics? g)
+    {
+        EnsureFonts();
+        _hits.Clear();
+        int w = Px(560), pad = Px(28), inner = w - 2 * pad;
+        int y = Px(24);
+
+        // first pass only measures; the panel needs the final height, so measure, then draw
+        if (g != null)
+        {
+            var size = Layout(null);
+            Glass.Panel(g, size, Px(16), 238, 226, Glass.Edge);
+            _hits.Clear();
+        }
+
+        // close (x), top right
+        var close = new Rectangle(w - Px(14) - Px(30), Px(14), Px(30), Px(30));
+        _hits["close"] = close;
+        if (g != null)
+        {
+            if (_hover == "close") Fill(g, close, Px(8), Color.FromArgb(30, 255, 255, 255));
+            using var p = new Pen(_hover == "close" ? OverlayForm.Fg : OverlayForm.Dim, Math.Max(1.5f, Px(1.6f)));
+            var smooth = g.SmoothingMode;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            float c = Px(5.5f), cx = close.X + close.Width / 2f, cy = close.Y + close.Height / 2f;
+            g.DrawLine(p, cx - c, cy - c, cx + c, cy + c);
+            g.DrawLine(p, cx - c, cy + c, cx + c, cy - c);
+            g.SmoothingMode = smooth;
+        }
+
+        // title + intro
+        Str(g, "Chest Counter", _title, OverlayForm.Gold, pad, y);
+        y += _title.Height + Px(2);
+        y += Para(g, "Counts the chests you open or break and the season treasures you get, straight from your " +
+                     "Fortnite replays. It runs quietly in the tray, next to the clock.", _sub, OverlayForm.Dim, pad, y, inner);
+
+        void Section(string name)
+        {
+            y += Px(20);
+            Str(g, name, _section, OverlayForm.Dim, pad, y);
+            var tw = TextW(name, _section);
+            if (g != null) using (var b = new SolidBrush(Line)) g.FillRectangle(b, pad + tw + Px(10), y + _section.Height / 2, inner - tw - Px(10), 1);
+            y += _section.Height + Px(10);
+        }
+
+        // ---- checks ----
+        Section("CHECKS");
+        foreach (var c in _checks)
+        {
+            var color = c.State switch
+            {
+                SetupChecks.State.Ok => OverlayForm.Green,
+                SetupChecks.State.Warn => OverlayForm.Gold,
+                _ => OverlayForm.Red,
+            };
+            var d = Px(26);
+            if (g != null)
+            {
+                var smooth = g.SmoothingMode;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var glow = new SolidBrush(Color.FromArgb(40, color))) g.FillEllipse(glow, pad, y, d, d);
+                using (var ring = new Pen(Color.FromArgb(150, color), 1)) g.DrawEllipse(ring, pad + 0.5f, y + 0.5f, d - 1, d - 1);
+                using var pen = new Pen(color, Px(2.2f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+                float cx = pad + d / 2f, cy = y + d / 2f, u = d / 26f;
+                switch (c.State)
+                {
+                    case SetupChecks.State.Ok:
+                        g.DrawLines(pen, [new PointF(cx - 6 * u, cy), new PointF(cx - 2 * u, cy + 4.5f * u), new PointF(cx + 6.5f * u, cy - 5 * u)]);
+                        break;
+                    case SetupChecks.State.Warn:
+                        g.DrawLine(pen, cx, cy - 6 * u, cx, cy + 1.5f * u);
+                        using (var dot = new SolidBrush(color)) g.FillEllipse(dot, cx - 1.6f * u, cy + 4.2f * u, 3.2f * u, 3.2f * u);
+                        break;
+                    default:
+                        g.DrawLine(pen, cx - 5 * u, cy - 5 * u, cx + 5 * u, cy + 5 * u);
+                        g.DrawLine(pen, cx - 5 * u, cy + 5 * u, cx + 5 * u, cy - 5 * u);
+                        break;
+                }
+                g.SmoothingMode = smooth;
+            }
+            int tx = pad + d + Px(14), tw = inner - d - Px(14);
+            var top = y;
+            y += Px(1);
+            y += Para(g, c.Title, _bold, c.State == SetupChecks.State.Ok ? OverlayForm.Fg : color, tx, y, tw) + Px(2);
+            y += Para(g, c.Detail, _text, OverlayForm.Dim, tx, y, tw);
+            y = Math.Max(y, top + d) + Px(12);
+        }
+        y -= Px(12);
+
+        // ---- keys ----
+        Section("KEYS  (work while you play)");
+        foreach (var (keys, what) in new[]
+                 {
+                     (new[] { "F8" }, "Hide / show the overlay"),
+                     (new[] { "Shift", "F8" }, "Move it: drag with the mouse, press again to lock"),
+                     (new[] { "Ctrl", "F8" }, "Switch view: full, compact, graph"),
+                 })
+        {
+            var x = pad;
+            var capH = Px(26);
+            for (var i = 0; i < keys.Length; i++)
+            {
+                if (i > 0)
+                {
+                    Str(g, "+", _key, OverlayForm.Dim, x + Px(4), y + (capH - _key.Height) / 2f);
+                    x += Px(4) + TextW("+", _key) + Px(4);
+                }
+                var cw = Math.Max(Px(30), TextW(keys[i], _key) + Px(18));
+                Fill(g, new RectangleF(x, y, cw, capH), Px(6), Color.FromArgb(22, 255, 255, 255), Color.FromArgb(55, 255, 255, 255));
+                if (g != null) using (var under = new SolidBrush(Color.FromArgb(40, 0, 0, 0))) g.FillRectangle(under, x + Px(4), y + capH - Px(1), cw - Px(8), Px(1));
+                Str(g, keys[i], _key, OverlayForm.Fg, x + (cw - TextW(keys[i], _key)) / 2f, y + (capH - _key.Height) / 2f);
+                x += cw;
+            }
+            var descX = pad + Px(132);
+            Para(g, what, _text, OverlayForm.Soft, descX, y + (capH - _text.Height) / 2, inner - Px(132));
+            y += capH + Px(8);
+        }
+        y += Para(g, "Right-click the tray icon for the full report, the graph, Start with Windows and Exit.", _text, OverlayForm.Dim, pad, y + Px(2), inner);
+
+        // ---- good to know ----
+        Section("GOOD TO KNOW");
+        foreach (var s in new[]
+                 {
+                     "The first start reads your last ~100 games. That takes about a minute; the overlay shows the progress.",
+                     "After that, each game is counted a few seconds after you leave the match.",
+                     "Custom games (fewer than 10 players) are left out.",
+                 })
+        {
+            if (g != null)
+            {
+                var smooth = g.SmoothingMode;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using var b = new SolidBrush(OverlayForm.Gold);
+                g.FillEllipse(b, pad + Px(2), y + _text.Height / 2f - Px(3), Px(6), Px(6));
+                g.SmoothingMode = smooth;
+            }
+            y += Para(g, s, _text, OverlayForm.Soft, pad + Px(18), y, inner - Px(18)) + Px(6);
+        }
+
+        // ---- bottom: start with Windows + buttons ----
+        y += Px(10);
+        if (g != null) using (var b = new SolidBrush(Line)) g.FillRectangle(b, pad, y, inner, 1);
+        y += Px(18);
+
+        var box = Px(20);
+        var label = "Start with Windows";
+        var rowH = Px(36);
+        var boxY = y + (rowH - box) / 2;
+        var hitW = box + Px(10) + TextW(label, _bold);
+        _hits["startup"] = new Rectangle(pad - Px(4), y, hitW + Px(8), rowH);
+        Fill(g, new RectangleF(pad, boxY, box, box), Px(5),
+            StartWithWindowsChecked ? OverlayForm.Gold : Color.FromArgb(_hover == "startup" ? 30 : 16, 255, 255, 255),
+            StartWithWindowsChecked ? null : Color.FromArgb(90, 255, 255, 255));
+        if (g != null && StartWithWindowsChecked)
+        {
+            var smooth = g.SmoothingMode;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var pen = new Pen(OverlayForm.Bg, Px(2.2f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            float u = box / 20f, bx = pad, by = boxY;
+            g.DrawLines(pen, [new PointF(bx + 5 * u, by + 10.5f * u), new PointF(bx + 8.5f * u, by + 14 * u), new PointF(bx + 15 * u, by + 6.5f * u)]);
+            g.SmoothingMode = smooth;
+        }
+        var lx = pad + box + Px(10);
+        Str(g, label, _bold, OverlayForm.Fg, lx, y + (rowH - _bold.Height) / 2f);
+        y += rowH + Px(12);
+
+        // buttons, right-aligned: [Check again] [Done]
+        var bh = Px(38);
+        int Btn(string id, string text, int right, bool primary)
+        {
+            var bw = TextW(text, _btn) + Px(36);
+            var r = new Rectangle(right - bw, y, bw, bh);
+            _hits[id] = r;
+            var hover = _hover == id;
+            var down = _pressed == id && hover;
+            Fill(g, r, Px(9),
+                primary ? (down ? ColorTranslator.FromHtml("#e6ad2a") : hover ? ColorTranslator.FromHtml("#ffd166") : OverlayForm.Gold)
+                        : Color.FromArgb(down ? 44 : hover ? 32 : 18, 255, 255, 255),
+                primary ? null : Color.FromArgb(70, 255, 255, 255));
+            Str(g, text, _btn, primary ? OverlayForm.Bg : OverlayForm.Fg, r.X + (bw - TextW(text, _btn)) / 2f, r.Y + (bh - _btn.Height) / 2f);
+            return r.X;
+        }
+        var nextRight = Btn("done", "Done", w - pad, primary: true);
+        Btn("again", "Check again", nextRight - Px(10), primary: false);
+        // the note goes in the gap left of the buttons
+        Para(g, "Start with Windows is recommended, so no game gets missed.", _text, OverlayForm.Dim, pad, y + (bh - _text.Height * 2) / 2, Math.Max(Px(120), nextRight - Px(10) - TextW("Check again", _btn) - Px(36) - pad - Px(20)));
+        y += bh + Px(24);
+
+        return new Size(w, y);
     }
 }
+

@@ -45,7 +45,8 @@ static class OverlayModel
     public static OverlayForm.View Build(Stats.Summary s, string status, (int Done, int Total)? progress, DateTime? inGameSince,
         DateTime? manualStart, Flash? flash, string? hint, Color hintColor, DateTime now, int page = 0)
     {
-        var graph = page == 1;
+        var graph = page == Settings.PageGraph;
+        var compact = page == Settings.PageCompact;
         var v = new OverlayForm.View();
         var session = CurrentSession(s, inGameSince, manualStart, now);
         var sGames = session.Games;
@@ -58,7 +59,7 @@ static class OverlayModel
 
         v.Headline.Add((s.Chests.ToString("N0"), "TOTAL CHESTS", null));
         v.Headline2.Add((s.Games.ToString("N0"), "GAMES", null));
-        v.Headline2.Add((s.Games > 0 ? s.PerGame.ToString("F1") : none, "AVERAGE", null));
+        if (!compact) v.Headline2.Add((s.Games > 0 ? s.PerGame.ToString("F1") : none, "AVERAGE", null));
         v.Headline2.Add((s.BestGame?.Chests.ToString() ?? none, "BEST GAME", null));
         if (s.HasTreasureCounts)
             v.Headline2.Add((s.Treasures.ToString("N0"), "TREASURES", flashing && s.LastGame?.Match.OwnTreasures > 0 ? flash!.Color : OverlayForm.Gold));
@@ -78,11 +79,11 @@ static class OverlayModel
             return [chests.ToString("N0"), list.Count.ToString("N0"), list.Max(g => g.Chests).ToString(), ((double)chests / list.Count).ToString("F1")];
         }
 
-        if (s.Modes.Count > 0)
+        if (s.Modes.Count > 0 && !compact)
             v.Tables.Add(new(["mode", "chests", "games", "best", "p/g"],
                 s.Modes.Select(m => new OverlayForm.TableRow(Short(m.Mode), Cells(s.All.Where(g => g.Mode == m.Mode)), Bold: false)).ToList()));
 
-        if (s.Treasure.Count > 0)
+        if (s.Treasure.Count > 0 && !compact)
             v.Tables.Add(new(null, [new("treasure", [$"{s.Treasure[^1].Items}, {s.Treasure[^1].Match.Started:MMM d}"], OverlayForm.Gold)]));
 
         if (graph)

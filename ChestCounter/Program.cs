@@ -41,7 +41,7 @@ static class Program
             using var form = new OverlayForm();
             form.SetView(OverlayModel.Build(sum, inGame != null ? SquadChests.GameWatcher.InGameStatus : SquadChests.GameWatcher.WatchingStatus,
                 null, inGame, null, flash, args.Contains("--hint") ? "F8 hide/show   Shift+F8 move   Ctrl+F8 page\ncounts update right after each game" : null, OverlayForm.Dim, now,
-                args.Contains("--graph") ? 1 : 0));
+                args.Contains("--graph") ? Settings.PageGraph : args.Contains("--compact") ? Settings.PageCompact : Settings.PageFull));
             using var bmp = form.Snapshot();
             bmp.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
             return;

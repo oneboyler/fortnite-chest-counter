@@ -19,9 +19,6 @@ sealed class OverlayForm : Form
 
     // Glass look: only the background is see-through, text stays solid.
     const int GlassTopAlpha = 196, GlassBottomAlpha = 170;   // 77% -> 67%
-    static readonly Color GlassTop = Color.FromArgb(GlassTopAlpha, 22, 26, 33);
-    static readonly Color GlassBottom = Color.FromArgb(GlassBottomAlpha, 12, 14, 18);
-    static readonly Color GlassEdge = Color.FromArgb(28, 255, 255, 255);
 
     /// <summary>A table: optional small header row, then rows of label + right-aligned values.</summary>
     /// <remarks>KeyColumn: the one value column that matters most (bold white); the others are drawn grey.</remarks>
@@ -57,6 +54,25 @@ sealed class OverlayForm : Form
         public Color HintColor = Dim;
         /// <summary>Small dot in the top-right corner: gold = in a game, green = reading the game that just ended.</summary>
         public Color? Dot;
+
+        /// <summary>Everything that changes the picture, as one string: equal = no need to redraw.</summary>
+        public string Signature()
+        {
+            var sb = new System.Text.StringBuilder();
+            void C(Color? c) => sb.Append(c?.ToArgb()).Append('|');
+            foreach (var h in Headline) { sb.Append(h.Value).Append(h.Label); C(h.Color); }
+            sb.Append('#');
+            foreach (var h in Headline2) { sb.Append(h.Value).Append(h.Label); C(h.Color); }
+            foreach (var t in Tables)
+            {
+                sb.Append('#').Append(string.Join(",", t.Header ?? []));
+                foreach (var r in t.Rows) { sb.Append(r.Label).Append(string.Join(",", r.Cells)); C(r.Color); }
+            }
+            sb.Append('#').Append(Status); C(StatusColor);
+            sb.Append(Hint); C(HintColor); C(Dot);
+            if (Graph != null) sb.Append('#').Append(string.Join(",", Graph)).Append(GraphAvg).Append(GraphTrend.Count > 0 ? GraphTrend[^1] : 0);
+            return sb.ToString();
+        }
 
         /// <summary>Set = show the graph instead of the numbers: chests in each game, oldest first.</summary>
         public List<int>? Graph;
@@ -110,35 +126,13 @@ sealed class OverlayForm : Form
     {
         if (!IsHandleCreated) return;
         using var bmp = RenderBitmap();
-        var screen = Native.GetDC(IntPtr.Zero);
-        var mem = Native.CreateCompatibleDC(screen);
-        var hbmp = bmp.GetHbitmap(Color.FromArgb(0));
-        var old = Native.SelectObject(mem, hbmp);
-        try
-        {
-            var dst = new Native.POINT { X = Left, Y = Top };
-            var size = new Native.SIZE { CX = bmp.Width, CY = bmp.Height };
-            var src = new Native.POINT();
-            var blend = new Native.BLENDFUNCTION { BlendOp = Native.AC_SRC_OVER, SourceConstantAlpha = 255, AlphaFormat = Native.AC_SRC_ALPHA };
-            Native.UpdateLayeredWindow(Handle, screen, ref dst, ref size, mem, ref src, 0, ref blend, Native.ULW_ALPHA);
-        }
-        finally
-        {
-            Native.SelectObject(mem, old);
-            Native.DeleteObject(hbmp);
-            Native.DeleteDC(mem);
-            Native.ReleaseDC(IntPtr.Zero, screen);
-        }
+        Glass.Push(this, bmp);
     }
 
     Bitmap RenderBitmap()
     {
-        var size = Render(null);
-        var bmp = new Bitmap(Math.Max(1, size.Width), Math.Max(1, size.Height), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
-        using var g = Graphics.FromImage(bmp);
-        g.Clear(Color.Transparent);
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-        Render(g);
+        var bmp = Glass.NewCanvas(Render(null), out var g);
+        using (g) Render(g);
         return bmp;
     }
 
@@ -149,10 +143,16 @@ sealed class OverlayForm : Form
 
     public void SetView(View v)
     {
+        // Called every second; only redraw when something on the overlay actually changed.
+        var sig = v.Signature();
+        if (sig == _lastSignature) return;
+        _lastSignature = sig;
         _view = v;
         UpdateSize();
         Redraw();
     }
+
+    string? _lastSignature;
 
     /// <summary>Move mode: gold border, draggable, right-click menu. Otherwise clicks pass through to the game.</summary>
     public void SetMoving(bool on)
@@ -253,7 +253,7 @@ sealed class OverlayForm : Form
     static Graphics MakeMeasureG()
     {
         var g = Graphics.FromImage(new Bitmap(1, 1));
-        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        g.TextRenderingHint = Glass.TextHint;
         return g;
     }
 
@@ -281,18 +281,6 @@ sealed class OverlayForm : Form
     // Windows ignores WM_PAINT for this kind of window; Redraw() does the drawing.
     protected override void OnPaint(PaintEventArgs e) { }
 
-    static System.Drawing.Drawing2D.GraphicsPath Rounded(RectangleF r, float radius)
-    {
-        var d = radius * 2;
-        var p = new System.Drawing.Drawing2D.GraphicsPath();
-        p.AddArc(r.X, r.Y, d, d, 180, 90);
-        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        p.CloseFigure();
-        return p;
-    }
-
     /// <summary>Draws the overlay (when g is set) and returns its size in pixels.</summary>
     Size Render(Graphics? g)
     {
@@ -302,16 +290,7 @@ sealed class OverlayForm : Form
 
         // glass background: rounded, see-through gradient, thin light edge (gold while moving)
         var smooth = g.SmoothingMode;
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var rect = new RectangleF(0.5f, 0.5f, size.Width - 1, size.Height - 1);
-        using (var path = Rounded(rect, Px(12)))
-        {
-            using (var bg = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(0, 0, size.Width, size.Height), GlassTop, GlassBottom, 70f))
-                g.FillPath(bg, path);
-            using var edge = new Pen(_moving ? Gold : GlassEdge, _moving ? Px(2) : 1);
-            g.DrawPath(edge, path);
-        }
-        g.SmoothingMode = smooth;
+        Glass.Panel(g, size, Px(12), GlassTopAlpha, GlassBottomAlpha, _moving ? Gold : Glass.Edge, _moving ? Px(2) : 1);
 
         if (_view.Graph == null) RenderNumbers(g);
         else RenderGraph(g, size);
@@ -508,8 +487,9 @@ sealed class OverlayForm : Form
             {
                 var h = items[i];
                 var mid = x0 + i * colW + colW / 2;
-                DrawStr(g, h.Value, f, h.Color ?? Fg, mid - Measure(h.Value, f).Width / 2, y);
-                DrawStr(g, h.Label, _fSmall, Dim, mid - Measure(h.Label, _fSmall).Width / 2, y + numH);
+                // centered on the visible ink, so "103" and "5,877" sit exactly over their labels
+                DrawStrF(g, h.Value, f, h.Color ?? Fg, mid - Glass.InkCenter(h.Value, f, Typo), y);
+                DrawStrF(g, h.Label, _fSmall, Dim, mid - Glass.InkCenter(h.Label, _fSmall, Typo), y + numH);
             }
             y += numH + _fSmall.Height;
         }
@@ -587,6 +567,13 @@ sealed class OverlayForm : Form
     }
 
     static void DrawStr(Graphics? g, string s, Font f, Color c, int x, int y)
+    {
+        if (g == null || string.IsNullOrEmpty(s)) return;
+        using var b = new SolidBrush(c);
+        g.DrawString(s, f, b, x, y, Typo);
+    }
+
+    static void DrawStrF(Graphics? g, string s, Font f, Color c, float x, float y)
     {
         if (g == null || string.IsNullOrEmpty(s)) return;
         using var b = new SolidBrush(c);

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Shared code: replay reading, chest counting, stats. Used by the Chest Counter app and the ChestStats command line tool. -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- The parser only picks up export classes from assemblies whose name contains "ReplayReader". -->
+    <AssemblyName>SquadChests.ReplayReader</AssemblyName>
+    <RootNamespace>SquadChests</RootNamespace>
+    <NoWarn>$(NoWarn);CS8618;CS8625</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\vendor\FortniteReplayDecompressor\src\FortniteReplayReader\FortniteReplayReader.csproj" />
+  </ItemGroup>
+
+</Project>

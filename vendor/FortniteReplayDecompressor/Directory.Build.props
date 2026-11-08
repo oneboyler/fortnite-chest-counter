@@ -1,0 +1,10 @@
+<Project>
+  <!-- Vendored from https://github.com/Shiqan/FortniteReplayDecompressor (MIT). Retargeted from net10.0 to net9.0. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1591;CS8618;CS8600;CS8601;CS8602;CS8603;CS8604;CS8625</NoWarn>
+  </PropertyGroup>
+</Project>

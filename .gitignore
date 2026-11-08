@@ -1,0 +1,8 @@
+bin/
+obj/
+publish/
+*.user
+.vs/
+# never commit game history or settings
+data/
+*.replay

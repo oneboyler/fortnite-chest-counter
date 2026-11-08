@@ -1,0 +1,303 @@
+using System.Diagnostics;
+using SquadChests;
+
+namespace ChestCounter;
+
+/// <summary>Runs in the tray: owns the replay watcher, the overlay, the tray icon/menu and the F8 keys.</summary>
+sealed class TrayApp : ApplicationContext
+{
+    readonly string _dataDir;
+    readonly Settings _settings;
+    readonly string[] _treasure;
+    readonly GameWatcher _watcher;
+    readonly OverlayForm _overlay;
+    readonly NotifyIcon _tray;
+    readonly ContextMenuStrip _menu;
+    readonly ToolStripMenuItem _miShow, _miMove, _miGraph, _miNotify, _miStartup;
+    readonly System.Windows.Forms.Timer _keys, _clock;
+    readonly DateTime _startedAt = DateTime.Now;
+
+    IReadOnlyList<MatchResult>? _summarized;
+    Stats.Summary _sum = new();
+    Flash? _flash;
+    int _refreshQueued;
+    bool _f8WasDown;
+    int _ticks;
+
+    public TrayApp()
+    {
+        _dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+        Directory.CreateDirectory(_dataDir);
+        _settings = Settings.Load(_dataDir);
+        _treasure = Stats.LoadTreasurePatterns(_dataDir);
+        _watcher = new GameWatcher(Scanner.DefaultReplayDir(), _dataDir);
+
+        // ---- menu (tray icon right-click, and overlay right-click in move mode) ----
+        _miShow = new ToolStripMenuItem("Hide overlay", null, (_, _) => ToggleVisible()) { ShortcutKeyDisplayString = "F8" };
+        _miMove = new ToolStripMenuItem("Move overlay", null, (_, _) => ToggleMove()) { ShortcutKeyDisplayString = "Shift+F8" };
+        // pages: numbers / graph (Ctrl+F8 switches)
+        _miGraph = new ToolStripMenuItem("Show graph", null, (_, _) => NextPage()) { ShortcutKeyDisplayString = "Ctrl+F8" };
+        _miNotify = new ToolStripMenuItem("Windows pop-up after each game", null, (_, _) =>
+        {
+            _settings.NotifyAfterGame = !_settings.NotifyAfterGame;
+            _settings.Save(_dataDir);
+        });
+        _miStartup = new ToolStripMenuItem("Start with Windows", null, (_, _) =>
+        {
+            try { StartWithWindows.Set(!StartWithWindows.IsOn()); }
+            catch (Exception ex) { MessageBox.Show("Couldn't change that: " + ex.Message, "Chest Counter"); }
+        });
+        _menu = new ContextMenuStrip();
+        _menu.Items.AddRange(new ToolStripItem[]
+        {
+            _miShow, _miMove, _miGraph,
+            new ToolStripMenuItem("New session", null, (_, _) => NewSession()),
+            new ToolStripSeparator(),
+            _miNotify, _miStartup,
+            new ToolStripSeparator(),
+            new ToolStripMenuItem("Full report (per mode, teammates...)", null, (_, _) => OpenReport()),
+            new ToolStripMenuItem("Setup and help", null, (_, _) => ShowSetup()),
+            new ToolStripMenuItem("Open replay folder", null, (_, _) => OpenFolder(_watcher.Scanner.ReplayDir)),
+            new ToolStripMenuItem("Open data folder", null, (_, _) => OpenFolder(_dataDir)),
+            new ToolStripSeparator(),
+            new ToolStripMenuItem("Exit", null, (_, _) => Exit()),
+        });
+        _menu.Opening += (_, _) =>
+        {
+            _miShow.Text = _overlay!.Visible ? "Hide overlay" : "Show overlay";
+            _miMove.Checked = _overlay.Moving;
+            _miGraph.Checked = _settings.Page == 1;
+            _miNotify.Checked = _settings.NotifyAfterGame;
+            _miStartup.Checked = StartWithWindows.IsOn();
+        };
+
+        // ---- overlay ----
+        _overlay = new OverlayForm { MoveMenu = _menu };
+        _overlay.MoveEnded += () =>
+        {
+            _settings.Left = _overlay.Left;
+            _settings.Top = _overlay.Top;
+            _settings.Save(_dataDir);
+        };
+        _ = _overlay.Handle; // create it now so background updates work while it's hidden
+
+        // ---- tray icon ----
+        _tray = new NotifyIcon
+        {
+            Icon = ChestArt.Icon(SystemInformation.SmallIconSize.Width),
+            Text = "Chest Counter",
+            ContextMenuStrip = _menu,
+            Visible = true,
+        };
+        _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleVisible(); };
+
+        _watcher.Changed += QueueRefresh;
+        _watcher.GameAdded += m => OnUi(() => OnGameAdded(m));
+
+        // F8 = hide/show, Shift+F8 = move. Only reads whether the key is held, so the game still gets the key too.
+        _keys = new System.Windows.Forms.Timer { Interval = 30 };
+        _keys.Tick += (_, _) => PollKeys();
+        _keys.Start();
+
+        // session clock, flash timeout, and keeping the overlay above the game
+        _clock = new System.Windows.Forms.Timer { Interval = 1000 };
+        _clock.Tick += (_, _) =>
+        {
+            RefreshView();
+            if (++_ticks % 2 == 0 && !_overlay.Moving) _overlay.BringToTop();
+        };
+        _clock.Start();
+
+        RefreshView();
+        PlaceOverlay();
+        if (_settings.OverlayVisible) _overlay.Show();
+        _watcher.Start();
+        if (!_settings.SetupDone) _overlay.BeginInvoke(ShowSetup);
+    }
+
+    SetupForm? _setup;
+
+    /// <summary>First start (and tray menu): checks Fortnite's settings and explains the keys.</summary>
+    void ShowSetup()
+    {
+        if (_setup is { IsDisposed: false }) { _setup.Activate(); return; }
+        // first start: suggest starting with Windows; later: show what it's set to now
+        _setup = new SetupForm(_watcher.Scanner.ReplayDir, _settings.SetupDone ? StartWithWindows.IsOn() : true);
+        _setup.FormClosed += (_, _) =>
+        {
+            try { if (_setup!.StartWithWindowsBox.Checked != StartWithWindows.IsOn()) StartWithWindows.Set(_setup.StartWithWindowsBox.Checked); }
+            catch (Exception ex) { MessageBox.Show("Couldn't change \"Start with Windows\": " + ex.Message, "Chest Counter"); }
+            _settings.SetupDone = true;
+            _settings.Save(_dataDir);
+        };
+        _setup.Show();
+        _setup.Activate();
+    }
+
+    /// <summary>Another copy of the app was started: show the overlay instead.</summary>
+    public void ShowFromOtherInstance() => OnUi(() => { if (!_overlay.Visible) ToggleVisible(); });
+
+    void OnUi(Action a)
+    {
+        try { if (!_overlay.IsDisposed) _overlay.BeginInvoke(a); }
+        catch (InvalidOperationException) { /* shutting down */ }
+    }
+
+    void QueueRefresh()
+    {
+        // The watcher can fire many times a second while reading; redraw at most once per UI turn.
+        if (Interlocked.Exchange(ref _refreshQueued, 1) == 1) return;
+        OnUi(() => { _refreshQueued = 0; RefreshView(); });
+    }
+
+    void RefreshView()
+    {
+        var snap = _watcher.Snapshot;
+        if (!ReferenceEquals(snap, _summarized))
+        {
+            _summarized = snap;
+            _sum = Stats.Summarize(snap, _treasure);
+        }
+
+        string? hint = null;
+        var hintColor = OverlayForm.Dim;
+        if (_overlay.Moving)
+        {
+            hint = "drag to move  -  right-click for menu\nShift+F8 again to lock";
+            hintColor = OverlayForm.Gold;
+        }
+        else if (DateTime.Now - _startedAt < TimeSpan.FromSeconds(15))
+        {
+            hint = "F8 hide/show   Shift+F8 move   Ctrl+F8 page\ncounts update right after each game";
+        }
+
+        _overlay.SetView(OverlayModel.Build(_sum, _watcher.Status, _watcher.ScanProgress, _watcher.InGameSince,
+            _settings.SessionStart, _flash, hint, hintColor, DateTime.Now, _settings.Page));
+        var tip = _sum.Games > 0 ? $"Chest Counter: {_sum.Chests:N0} chests, {_sum.PerGame:F1}/game" : "Chest Counter";
+        _tray.Text = tip.Length > 63 ? tip[..63] : tip;
+    }
+
+    void OnGameAdded(MatchResult m)
+    {
+        if (Stats.IsCustom(m))
+        {
+            _flash = new Flash("custom, not counted", OverlayForm.Dim, DateTime.Now.AddSeconds(10));
+            RefreshView();
+            return;
+        }
+        var c = Stats.Count(m, _treasure);
+        var n = c.MeOpened + c.MeDestroyed;
+        var treasure = c.TreasureChests.SelectMany(x => x.Items).Concat(c.TreasureInLobby)
+            .Where(i => Stats.IsTreasure(i, _treasure)).Distinct().Select(Stats.Pretty).ToList();
+        _flash = treasure.Count > 0
+            ? new Flash($"+{n} TREASURE!", OverlayForm.Gold, DateTime.Now.AddMinutes(5))
+            : new Flash($"+{n}", OverlayForm.Green, DateTime.Now.AddSeconds(20));
+        RefreshView();
+
+        if (!_settings.NotifyAfterGame && treasure.Count == 0) return;
+        var lines = new List<string>();
+        if (treasure.Count > 0) lines.Add(string.Join(", ", treasure));
+        lines.Add($"+{n} chests" + (m.OwnTreasures > 0 ? $", +{m.OwnTreasures} season treasure" : "")
+                  + (m.SharedTreasures > 0 ? $" (+{m.SharedTreasures} from teammates)" : ""));
+        lines.Add($"Total {_sum.Chests:N0} chests · {_sum.PerGame:F1} per game");
+        var fresh = Stats.NewItems(m, _watcher.Snapshot);
+        if (fresh.Count > 0) lines.Add("Never seen before: " + string.Join(", ", fresh.Select(Stats.Pretty)));
+        var title = treasure.Count > 0 ? "TREASURE!" : $"{Stats.ModeOf(m)}: +{n} chests";
+        var text = string.Join("\n", lines);
+        _tray.ShowBalloonTip(6000, title, text.Length > 250 ? text[..250] + "…" : text, ToolTipIcon.None);
+    }
+
+    void PollKeys()
+    {
+        var down = Native.IsDown(Native.VK_F8);
+        if (down && !_f8WasDown)
+        {
+            if (Native.IsDown(Native.VK_SHIFT)) ToggleMove();
+            else if (Native.IsDown(Native.VK_CONTROL)) NextPage();
+            else ToggleVisible();
+        }
+        _f8WasDown = down;
+    }
+
+    void ToggleVisible()
+    {
+        if (_overlay.Visible)
+        {
+            _overlay.SetMoving(false);
+            _overlay.Hide();
+        }
+        else
+        {
+            RefreshView();
+            _overlay.Show();
+            _overlay.BringToTop();
+        }
+        _settings.OverlayVisible = _overlay.Visible;
+        _settings.Save(_dataDir);
+    }
+
+    void ToggleMove()
+    {
+        if (!_overlay.Visible) ToggleVisible();
+        _overlay.SetMoving(!_overlay.Moving);
+        RefreshView();
+    }
+
+    void NextPage() => SetPage((_settings.Page + 1) % Settings.PageCount);
+
+    void SetPage(int page)
+    {
+        if (!_overlay.Visible) ToggleVisible();
+        _settings.Page = Math.Clamp(page, 0, Settings.PageCount - 1);
+        _settings.Save(_dataDir);
+        RefreshView();
+    }
+
+    void NewSession()
+    {
+        _settings.SessionStart = DateTime.Now;
+        _settings.Save(_dataDir);
+        RefreshView();
+    }
+
+    void PlaceOverlay()
+    {
+        var k = _overlay.DeviceDpi / 96f;
+        var size = _overlay.Size;
+        if (_settings.Left is int l && _settings.Top is int t
+            && Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(new Rectangle(l, t, size.Width, 40))))
+        {
+            _overlay.Location = new Point(l, t);
+            return;
+        }
+        // Below where the Python counter sits by default, so both fit.
+        var b = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
+        _overlay.Location = new Point(b.Left + (int)(24 * k), b.Top + (int)(520 * k));
+    }
+
+    void OpenReport()
+    {
+        var bat = Path.Combine(AppContext.BaseDirectory, "Chest Stats.bat");
+        if (File.Exists(bat)) Process.Start(new ProcessStartInfo(bat) { UseShellExecute = true });
+        else MessageBox.Show($"Not found:\n{bat}", "Chest Counter");
+    }
+
+    static void OpenFolder(string path)
+    {
+        if (Directory.Exists(path)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
+        else MessageBox.Show($"Folder not found:\n{path}", "Chest Counter");
+    }
+
+    void Exit()
+    {
+        if (_overlay.Moving) _overlay.SetMoving(false);
+        _settings.Save(_dataDir);
+        _watcher.Stop();
+        _keys.Stop();
+        _clock.Stop();
+        _tray.Visible = false;
+        _tray.Dispose();
+        _overlay.Close();
+        ExitThread();
+    }
+}

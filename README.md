@@ -4,9 +4,9 @@ A small see-through overlay that counts the chests you open or break in Fortnite
 
 It sits in the tray and updates a few seconds after each game ends.
 
-![The overlay: numbers page and graph page (Ctrl+F8)](docs/overlay.png)
+![The overlay: full, compact and graph views (Ctrl+F8)](docs/overlay.png)
 
-*Left: the numbers page, with the gold dot showing you're in a game. Right: chests per game (Ctrl+F8). Only the background is see-through; the numbers stay solid.*
+*The three views, switched with Ctrl+F8: full (the gold dot means you're in a game), compact, and chests per game. Only the background is see-through; the numbers stay solid.*
 
 ## Download
 
@@ -26,12 +26,13 @@ On the first start, a setup window checks two things and explains the keys:
 | --- | --- |
 | F8 | Hide / show the overlay |
 | Shift+F8 | Move it: drag it with the mouse, then Shift+F8 again to lock it |
-| Ctrl+F8 | Switch between the numbers and a graph of chests per game |
+| Ctrl+F8 | Switch view: full, compact (just the main numbers), or a graph of chests per game |
 
 Right-click the tray icon for the full report, Start with Windows, and more.
 
 ## What it counts
 
+- **Which chests:** normal chests, rare chests, relic chests, buried treasure and booty chests. Not ammo boxes, supply drops or loot cannons.
 - **Opened chests:** exact. The replay records who opened every chest.
 - **Destroyed chests:** worked out from rockets, hits, or whoever was standing closest.
 - **Season treasure:** every prize gives your character a hidden "prize handler" in the replay.

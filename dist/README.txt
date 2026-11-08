@@ -12,14 +12,15 @@ HOW TO USE
                       Fortnite keeps the replay locked until the game ends.)
 
     F8                Hide / show the overlay.
-    Ctrl+F8           Switch between the numbers and a graph of chests per game
+    Ctrl+F8           Switch view: full, compact (last game, total chests, games,
+                      best game, treasures) and a graph of chests per game
                       (bars = each game, gold line = average of your last 10 games,
                       dashed line = all-time average). Shows your last 100 games.
     Shift+F8          Move mode: drag it with the mouse, right-click it for the menu.
                       Shift+F8 again locks it; then clicks go straight through it.
                       F8 only reads whether the key is held, so the game still gets it.
     Tray icon         Left-click = hide/show. Right-click = menu: Show graph, New session,
-                      Windows pop-up after each game, Start with Windows, Full report,
+                      Compact view, Windows pop-up after each game, Start with Windows, Full report,
                       Setup and help, open the replay/data folder, Exit.
     First start       A setup window checks that Fortnite records replays and runs in
                       Windowed Fullscreen, explains the keys, and offers Start with Windows.
@@ -67,6 +68,8 @@ signed. Click "More info" > "Run anyway". It only reads your replay files; it se
 nothing anywhere and has no internet access code.
 
 HOW IT COUNTS
+  Chests      Normal, rare and relic chests, buried treasure and booty chests.
+              Not ammo boxes, supply drops or loot cannons.
   Opened      Exact. The replay records who opened every chest.
   Destroyed   The replay doesn't say who broke a chest, so the tool works it out:
                 - a rocket (boat rocket / rocket launcher) blew up at the chest

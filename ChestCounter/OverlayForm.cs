@@ -483,17 +483,26 @@ sealed class OverlayForm : Form
             var scale = widest > 0 ? Math.Clamp(sizeW * fill / widest, 1f, maxScale) : 1f;
             var f = Sized(baseFont, baseFont.Size * scale);
             var numH = GlyphHeight(f);
+            // y is where the visible top of the digits goes; afterwards y is the visible bottom of the labels,
+            // so the gaps above and below the row can be made exactly equal
+            var inkTop = items.Min(h => Glass.Ink(string.IsNullOrEmpty(h.Value) ? "0" : h.Value, f, Typo).Top);
+            var inkBottom = numH + items.Max(h => Glass.Ink(string.IsNullOrEmpty(h.Label) ? "A" : h.Label, _fSmall, Typo).Bottom);
+            var top = y - inkTop;
             for (var i = 0; i < items.Count; i++)
             {
                 var h = items[i];
                 var mid = x0 + i * colW + colW / 2;
                 // centered on the visible ink, so "103" and "5,877" sit exactly over their labels
-                DrawStrF(g, h.Value, f, h.Color ?? Fg, mid - Glass.InkCenter(h.Value, f, Typo), y);
-                DrawStrF(g, h.Label, _fSmall, Dim, mid - Glass.InkCenter(h.Label, _fSmall, Typo), y + numH);
+                DrawStrF(g, h.Value, f, h.Color ?? Fg, mid - Glass.InkCenter(h.Value, f, Typo), top);
+                DrawStrF(g, h.Label, _fSmall, Dim, mid - Glass.InkCenter(h.Label, _fSmall, Typo), top + numH);
             }
-            y += numH + _fSmall.Height;
+            y = (int)Math.Ceiling(top + inkBottom);
         }
+        // the same visible gap above and below each number row: from the panel edge or the divider line
+        int inkPad = Px(11);
+        y = border + inkPad;
         NumberRow(v.Headline, _fBig, 0.72f, 2, 1.35f);
+        y += inkPad - sepPad;
 
         // --- tables ---
         var rowH = Math.Max(_fValue.Height, _fText.Height) + Px(1);
@@ -541,8 +550,9 @@ sealed class OverlayForm : Form
         {
             y += sepPad;
             HLine(g, x0, right, y);
-            y += Px(1) + sepPad;
+            y += Px(1) + inkPad;
             NumberRow(v.Headline2, _fMid, 0.55f, 3, 1.45f);
+            y += inkPad - padY;   // the end adds padY back, so the bottom gap is inkPad
         }
 
         // --- status + hint ---

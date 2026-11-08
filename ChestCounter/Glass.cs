@@ -19,20 +19,30 @@ static class Glass
     /// </summary>
     public static float InkCenter(string s, Font f, StringFormat format)
     {
+        var b = Ink(s, f, format);
+        return b.Width > 0 ? b.X + b.Width / 2 : 0;
+    }
+
+    /// <summary>
+    /// The box around the visible ink of the text, relative to the drawing position (font must be in pixels).
+    /// Fonts leave room above for accents and below for letters like "g", so the drawn box has empty space
+    /// that's uneven above and below; this is the part you actually see.
+    /// </summary>
+    public static RectangleF Ink(string s, Font f, StringFormat format)
+    {
         var key = (s, f.FontFamily.Name, f.Style, f.Size);
         lock (InkCache)
         {
-            if (InkCache.TryGetValue(key, out var c)) return c;
+            if (InkCache.TryGetValue(key, out var b)) return b;
             using var p = new GraphicsPath();
-            p.AddString(s, f.FontFamily, (int)f.Style, f.Size, PointF.Empty, format);
-            var b = p.GetBounds();
-            c = b.Width > 0 ? b.X + b.Width / 2 : 0;
+            if (!string.IsNullOrEmpty(s)) p.AddString(s, f.FontFamily, (int)f.Style, f.Size, PointF.Empty, format);
+            b = p.PointCount > 0 ? p.GetBounds() : RectangleF.Empty;
             if (InkCache.Count > 2000) InkCache.Clear();
-            InkCache[key] = c;
-            return c;
+            InkCache[key] = b;
+            return b;
         }
     }
-    static readonly Dictionary<(string, string, FontStyle, float), float> InkCache = new();
+    static readonly Dictionary<(string, string, FontStyle, float), RectangleF> InkCache = new();
 
     public static GraphicsPath Rounded(RectangleF r, float radius)
     {

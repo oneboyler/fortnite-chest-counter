@@ -83,9 +83,53 @@ public static class Stats
 
     static int ModeOrder(string mode) => mode.StartsWith("Solo") ? 0 : mode.StartsWith("Duo") ? 1 : mode.StartsWith("Trio") ? 2 : mode.StartsWith("Squad") ? 3 : 4;
 
-    /// <summary>One entry per real match (a renamed/saved copy of the same replay is only counted once).</summary>
-    public static List<MatchResult> UniqueMatches(IEnumerable<MatchResult> all) =>
-        Finished(all).Where(m => !IsCustom(m)).ToList();
+    /// <summary>
+    /// Normal Battle Royale (build and zero build) and Ranked ("Habanero"). Reload, Blitz, LTMs, Creative etc. have other
+    /// playlist names and are left out, since their maps and loot differ.
+    /// </summary>
+    static readonly Regex CountedPlaylist = new(
+        @"^Playlist_(NoBuildBR_(Habanero_)?|Habanero_|Default)?(Solo|Duos?|Trios?|Squads?)$", RegexOptions.IgnoreCase);
+
+    public static bool IsCountedMode(MatchResult m) => m.Playlist != null && CountedPlaylist.IsMatch(m.Playlist);
+
+    /// <summary>The season: the main Fortnite version number ("++Fortnite+Release-43.00" -> 43). Each season is one number.</summary>
+    public static int? SeasonOf(MatchResult m)
+    {
+        var x = Regex.Match(m.Version ?? "", @"Release-(\d+)\.");
+        return x.Success ? int.Parse(x.Groups[1].Value) : null;
+    }
+
+    /// <summary>The newest season among the games read (the one being played now).</summary>
+    public static int? CurrentSeason(IEnumerable<MatchResult> all) =>
+        Finished(all).Where(m => !IsCustom(m)).Select(SeasonOf).Max();
+
+    /// <summary>Why a game isn't counted, or null if it is.</summary>
+    public static string? SkipReason(MatchResult m, int? season) =>
+        IsCustom(m) ? "custom game"
+        : !IsCountedMode(m) ? "other mode"
+        : season != null && SeasonOf(m) is int s && s < season ? "older season"
+        : null;
+
+    /// <summary>One entry per counted match (a renamed/saved copy of the same replay is only counted once).</summary>
+    public static List<MatchResult> UniqueMatches(IEnumerable<MatchResult> all)
+    {
+        var list = all as ICollection<MatchResult> ?? all.ToList();
+        var season = CurrentSeason(list);
+        return Finished(list).Where(m => SkipReason(m, season) == null).ToList();
+    }
+
+    /// <summary>Games left out by reason, e.g. "other mode" -> 3.</summary>
+    public static Dictionary<string, int> Skipped(IEnumerable<MatchResult> all)
+    {
+        var list = all as ICollection<MatchResult> ?? all.ToList();
+        var season = CurrentSeason(list);
+        return Finished(list).Select(m => SkipReason(m, season)).OfType<string>()
+            .GroupBy(r => r).ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    /// <summary>Playlist names of games left out as "other mode" (so new names can be spotted).</summary>
+    public static List<string> OtherModePlaylists(IEnumerable<MatchResult> all) =>
+        Finished(all).Where(m => !IsCustom(m) && !IsCountedMode(m)).Select(m => m.Playlist ?? "(unknown)").Distinct().ToList();
 
     /// <summary>Private custom games that were left out of the counts.</summary>
     public static int CustomGameCount(IEnumerable<MatchResult> all) => Finished(all).Count(IsCustom);
@@ -213,6 +257,11 @@ public static class Stats
         L("==============================================================");
         if (unreadable > 0) L($"  ({unreadable} replay(s) could not be read and are left out)");
         if (custom > 0) L($"  ({custom} custom game(s) with nobody else in the lobby are left out)");
+        var skipped = Skipped(all);
+        if (skipped.TryGetValue("other mode", out var om))
+            L($"  ({om} game(s) in other modes are left out: {string.Join(", ", OtherModePlaylists(all).Select(p => p.Replace("Playlist_", "")))})");
+        if (skipped.TryGetValue("older season", out var os))
+            L($"  ({os} game(s) from an older season are left out; counting season v{CurrentSeason(all)})");
         L();
 
         // ---------- you ----------
@@ -347,6 +396,7 @@ public static class Stats
     public static string NewMatchLine(MatchResult m, string[] treasure, IEnumerable<MatchResult> earlier)
     {
         if (IsCustom(m)) return $"{m.Started:HH:mm}  custom game (nobody else in the lobby), not counted";
+        if (SkipReason(m, CurrentSeason(earlier.Append(m))) is string why) return $"{m.Started:HH:mm}  {why} ({m.Playlist}), not counted";
         var c = Count(m, treasure);
         var brandNew = NewItems(m, earlier);
 

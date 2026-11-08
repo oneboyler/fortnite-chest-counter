@@ -13,8 +13,12 @@ sealed class TrayApp : ApplicationContext
     readonly OverlayForm _overlay;
     readonly NotifyIcon _tray;
     readonly ContextMenuStrip _menu;
-    readonly ToolStripMenuItem _miShow, _miMove, _miCompact, _miGraph, _miNotify, _miStartup;
-    readonly System.Windows.Forms.Timer _keys, _clock;
+    readonly ToolStripMenuItem _miShow, _miMove, _miCompact, _miGraph, _miNotify, _miStartup, _miUpdate, _miAutoUpdate;
+    readonly ToolStripSeparator _updateSep = new() { Visible = false };
+    readonly System.Windows.Forms.Timer _keys, _clock, _updateTimer;
+    Updater.Release? _update;
+    DateTime _updateFoundAt;
+    bool _updating;
     readonly DateTime _startedAt = DateTime.Now;
 
     IReadOnlyList<MatchResult>? _summarized;
@@ -48,13 +52,22 @@ sealed class TrayApp : ApplicationContext
             try { StartWithWindows.Set(!StartWithWindows.IsOn()); }
             catch (Exception ex) { MessageBox.Show("Couldn't change that: " + ex.Message, "Chest Counter"); }
         });
+        _miUpdate = new ToolStripMenuItem("Update", null, (_, _) => InstallUpdate()) { Visible = false };
+        _miUpdate.Font = new Font(_miUpdate.Font, FontStyle.Bold);
+        _miAutoUpdate = new ToolStripMenuItem("Check for updates", null, (_, _) =>
+        {
+            _settings.CheckForUpdates = !_settings.CheckForUpdates;
+            _settings.Save(_dataDir);
+            if (_settings.CheckForUpdates) _ = CheckForUpdate();
+        });
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(new ToolStripItem[]
         {
+            _miUpdate, _updateSep,
             _miShow, _miMove, _miCompact, _miGraph,
             new ToolStripMenuItem("New session", null, (_, _) => NewSession()),
             new ToolStripSeparator(),
-            _miNotify, _miStartup,
+            _miNotify, _miStartup, _miAutoUpdate,
             new ToolStripSeparator(),
             new ToolStripMenuItem("Full report (per mode, teammates...)", null, (_, _) => OpenReport()),
             new ToolStripMenuItem("Setup and help", null, (_, _) => ShowSetup()),
@@ -71,6 +84,7 @@ sealed class TrayApp : ApplicationContext
             _miGraph.Checked = _settings.Page == Settings.PageGraph;
             _miNotify.Checked = _settings.NotifyAfterGame;
             _miStartup.Checked = StartWithWindows.IsOn();
+            _miAutoUpdate.Checked = _settings.CheckForUpdates;
         };
 
         // ---- overlay ----
@@ -110,11 +124,55 @@ sealed class TrayApp : ApplicationContext
         };
         _clock.Start();
 
+        // update check: shortly after start, then every 6 hours
+        _updateTimer = new System.Windows.Forms.Timer { Interval = 15_000 };
+        _updateTimer.Tick += (_, _) => { _updateTimer.Interval = 6 * 3600 * 1000; _ = CheckForUpdate(); };
+        _updateTimer.Start();
+
         RefreshView();
         PlaceOverlay();
         if (_settings.OverlayVisible) _overlay.Show();
         _watcher.Start();
         if (!_settings.SetupDone) _overlay.BeginInvoke(ShowSetup);
+    }
+
+    async Task CheckForUpdate()
+    {
+        if (!_settings.CheckForUpdates || _update != null) return;
+        Updater.Release? r;
+        try { r = await Updater.CheckAsync(); }
+        catch { return; }   // offline, GitHub down...: try again later
+        if (r == null || !Updater.IsNewer(r)) return;
+        _update = r;
+        _updateFoundAt = DateTime.Now;
+        _miUpdate.Text = $"Update to {r.Tag} (new!)";
+        _miUpdate.Visible = _updateSep.Visible = true;
+        _tray.ShowBalloonTip(8000, $"Chest Counter {r.Tag} is out",
+            "Right-click the chest icon in the tray and click \"Update\". Your counted games are kept.", ToolTipIcon.Info);
+        RefreshView();
+    }
+
+    async void InstallUpdate()
+    {
+        if (_update == null || _updating) return;
+        _updating = true;
+        _miUpdate.Text = "Downloading update...";
+        _miUpdate.Enabled = false;
+        try
+        {
+            var src = await Updater.DownloadAsync(_update);
+            Updater.InstallAndRestart(src);
+            Exit();
+        }
+        catch (Exception ex)
+        {
+            _updating = false;
+            _miUpdate.Text = $"Update to {_update.Tag} (new!)";
+            _miUpdate.Enabled = true;
+            if (MessageBox.Show($"The update didn't work: {ex.Message}\n\nOpen the download page instead?", "Chest Counter",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                Process.Start(new ProcessStartInfo(Updater.ReleasesPage) { UseShellExecute = true });
+        }
     }
 
     SetupForm? _setup;
@@ -168,6 +226,11 @@ sealed class TrayApp : ApplicationContext
             hint = "drag to move  -  right-click for menu\nShift+F8 again to lock";
             hintColor = OverlayForm.Gold;
         }
+        else if (_update != null && !_updating && DateTime.Now - _updateFoundAt < TimeSpan.FromMinutes(2))
+        {
+            hint = $"Update {_update.Tag} is out: right-click\nthe chest icon in the tray > Update";
+            hintColor = OverlayForm.Gold;
+        }
         else if (DateTime.Now - _startedAt < TimeSpan.FromSeconds(15))
         {
             hint = "F8 hide/show   Shift+F8 move   Ctrl+F8 page\ncounts update right after each game";
@@ -181,9 +244,9 @@ sealed class TrayApp : ApplicationContext
 
     void OnGameAdded(MatchResult m)
     {
-        if (Stats.IsCustom(m))
+        if (Stats.SkipReason(m, Stats.CurrentSeason(_watcher.Snapshot.Append(m))) is string why)
         {
-            _flash = new Flash("custom, not counted", OverlayForm.Dim, DateTime.Now.AddSeconds(10));
+            _flash = new Flash($"{why}, not counted", OverlayForm.Dim, DateTime.Now.AddSeconds(10));
             RefreshView();
             return;
         }
@@ -297,6 +360,7 @@ sealed class TrayApp : ApplicationContext
         _watcher.Stop();
         _keys.Stop();
         _clock.Stop();
+        _updateTimer.Stop();
         _tray.Visible = false;
         _tray.Dispose();
         _overlay.Close();

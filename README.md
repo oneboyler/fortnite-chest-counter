@@ -39,11 +39,15 @@ Right-click the tray icon for the full report, Start with Windows, and more.
   - Prizes that line up with one of your own chests count as yours.
   - Teammates' finds (a squad shares prizes) are listed separately in the full report.
   - The replay doesn't say which prize it was. Awards other than gizmos drop once each, so nearly all are gizmos.
-- **Custom games:** left out.
+- **Which games:** normal Battle Royale (build and zero build) and Ranked, from the current season only. Custom games, Reload, Blitz, LTMs, Creative and older seasons are left out (the full report lists them).
+
+## Updates
+
+From v1.3 on, the app tells you when a new version is out. Right-click the tray icon > **Update**: it downloads the new version, swaps the program files and restarts. Your counted games are kept. (Coming from v1.0–v1.2, download v1.3 once by hand and replace the files.)
 
 ## Privacy
 
-It only reads the replay files in `%LOCALAPPDATA%\FortniteGame\Saved\Demos` and writes its own `data` folder next to the exe. It has no network code and sends nothing anywhere.
+It only reads the replay files in `%LOCALAPPDATA%\FortniteGame\Saved\Demos` and writes its own `data` folder next to the exe. It sends nothing about you or your games anywhere. Its only internet use is the update check: it asks GitHub for the latest release on start and every 6 hours (turn it off in the tray menu), and downloads an update only when you click it.
 
 ## Building
 

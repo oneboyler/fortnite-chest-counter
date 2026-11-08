@@ -48,6 +48,15 @@ WHAT COUNTS
   (you alone, or with a friend). Real matches always have 75+ players and bots.
   A game you save and rename in Fortnite is only counted once.
 
+  Only normal Battle Royale (build and zero build) and Ranked count, and only
+  this season (the newest Fortnite version among your games). Reload, Blitz,
+  LTMs, Creative and older seasons are left out; the full report lists them.
+
+UPDATES
+  When a new version is out, the overlay and a pop-up tell you. Right-click the
+  chest icon in the tray > "Update to vX.Y": it downloads it, swaps the program
+  files and restarts. Your data folder (counted games, settings) is kept.
+
 WHERE THINGS ARE
   Chest Counter.exe   The app.
   data\matches.json   Every game it has read.
@@ -64,8 +73,10 @@ Replays are read from %LOCALAPPDATA%\FortniteGame\Saved\Demos.
 Replay recording must be on in Fortnite (Settings > Game > Replays).
 Nothing to install: unzip the folder anywhere (not inside Program Files) and run it.
 Windows may say "Windows protected your PC" the first time, because the app isn't
-signed. Click "More info" > "Run anyway". It only reads your replay files; it sends
-nothing anywhere and has no internet access code.
+signed. Click "More info" > "Run anyway". It only reads your replay files and
+sends nothing about you or your games anywhere. Its only internet use: it asks
+GitHub for the latest version number on start and every 6 hours (tray menu >
+"Check for updates" turns that off), and downloads an update when you click it.
 
 HOW IT COUNTS
   Chests      Normal, rare and relic chests, buried treasure and booty chests.

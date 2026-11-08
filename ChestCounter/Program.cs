@@ -47,6 +47,14 @@ static class Program
             return;
         }
 
+        // Test helper: install the latest GitHub release over this copy right away (same as clicking "Update").
+        if (args.Length == 1 && args[0] == "--update-now")
+        {
+            var r = Updater.CheckAsync().GetAwaiter().GetResult() ?? throw new InvalidOperationException("no release found");
+            Updater.InstallAndRestart(Updater.DownloadAsync(r).GetAwaiter().GetResult());
+            return;
+        }
+
         using var running = new Mutex(true, RunningMutex, out var firstCopy);
         if (!firstCopy)
         {

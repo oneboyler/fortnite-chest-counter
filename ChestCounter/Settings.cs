@@ -19,6 +19,8 @@ sealed class Settings
     public DateTime? SessionStart { get; set; }
     /// <summary>The setup window was closed once; it doesn't open by itself again (tray menu > Setup and help).</summary>
     public bool SetupDone { get; set; }
+    /// <summary>Ask GitHub for a newer version on start and every few hours (the app's only internet use).</summary>
+    public bool CheckForUpdates { get; set; } = true;
 
     static string FileIn(string dataDir) => Path.Combine(dataDir, "settings.json");
 

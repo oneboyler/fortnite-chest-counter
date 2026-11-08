@@ -13,7 +13,15 @@ sealed class OverlayForm : Form
     public static readonly Color Gold = ColorTranslator.FromHtml("#ffc53d");
     public static readonly Color Green = ColorTranslator.FromHtml("#4ade80");
     public static readonly Color Red = ColorTranslator.FromHtml("#f87171");
-    static readonly Color LineColor = ColorTranslator.FromHtml("#2a313a");
+    /// <summary>Mode names in the table: a bit lighter than <see cref="Dim"/>.</summary>
+    public static readonly Color Soft = ColorTranslator.FromHtml("#b8c0ca");
+    static readonly Color LineColor = Color.FromArgb(26, 255, 255, 255);
+
+    // Glass look: only the background is see-through, text stays solid.
+    const int GlassTopAlpha = 196, GlassBottomAlpha = 170;   // 77% -> 67%
+    static readonly Color GlassTop = Color.FromArgb(GlassTopAlpha, 22, 26, 33);
+    static readonly Color GlassBottom = Color.FromArgb(GlassBottomAlpha, 12, 14, 18);
+    static readonly Color GlassEdge = Color.FromArgb(28, 255, 255, 255);
 
     /// <summary>A table: optional small header row, then rows of label + right-aligned values.</summary>
     /// <remarks>KeyColumn: the one value column that matters most (bold white); the others are drawn grey.</remarks>
@@ -77,10 +85,61 @@ sealed class OverlayForm : Form
         StartPosition = FormStartPosition.Manual;
         AutoScaleMode = AutoScaleMode.None;
         TopMost = true;
-        Opacity = 0.8;
         BackColor = Bg;
-        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint, true);
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
         UpdateSize();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Redraw();
+    }
+
+    protected override void OnVisibleChanged(EventArgs e)
+    {
+        base.OnVisibleChanged(e);
+        if (Visible) Redraw();
+    }
+
+    /// <summary>
+    /// Draws the overlay into a see-through picture and hands it to Windows (per-pixel alpha), so the
+    /// background can be glassy while the numbers stay fully solid.
+    /// </summary>
+    void Redraw()
+    {
+        if (!IsHandleCreated) return;
+        using var bmp = RenderBitmap();
+        var screen = Native.GetDC(IntPtr.Zero);
+        var mem = Native.CreateCompatibleDC(screen);
+        var hbmp = bmp.GetHbitmap(Color.FromArgb(0));
+        var old = Native.SelectObject(mem, hbmp);
+        try
+        {
+            var dst = new Native.POINT { X = Left, Y = Top };
+            var size = new Native.SIZE { CX = bmp.Width, CY = bmp.Height };
+            var src = new Native.POINT();
+            var blend = new Native.BLENDFUNCTION { BlendOp = Native.AC_SRC_OVER, SourceConstantAlpha = 255, AlphaFormat = Native.AC_SRC_ALPHA };
+            Native.UpdateLayeredWindow(Handle, screen, ref dst, ref size, mem, ref src, 0, ref blend, Native.ULW_ALPHA);
+        }
+        finally
+        {
+            Native.SelectObject(mem, old);
+            Native.DeleteObject(hbmp);
+            Native.DeleteDC(mem);
+            Native.ReleaseDC(IntPtr.Zero, screen);
+        }
+    }
+
+    Bitmap RenderBitmap()
+    {
+        var size = Render(null);
+        var bmp = new Bitmap(Math.Max(1, size.Width), Math.Max(1, size.Height), System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using var g = Graphics.FromImage(bmp);
+        g.Clear(Color.Transparent);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        Render(g);
+        return bmp;
     }
 
     float K => DeviceDpi / 96f;
@@ -92,7 +151,7 @@ sealed class OverlayForm : Form
     {
         _view = v;
         UpdateSize();
-        Invalidate();
+        Redraw();
     }
 
     /// <summary>Move mode: gold border, draggable, right-click menu. Otherwise clicks pass through to the game.</summary>
@@ -102,7 +161,7 @@ sealed class OverlayForm : Form
         _moving = on;
         UpdateStyles();
         BringToTop();
-        Invalidate();
+        Redraw();
         if (!on) MoveEnded?.Invoke();
     }
 
@@ -144,7 +203,7 @@ sealed class OverlayForm : Form
     {
         base.OnDpiChanged(e);
         UpdateSize();
-        Invalidate();
+        Redraw();
     }
 
     // ------------------------------------------------------------------ drawing
@@ -182,7 +241,36 @@ sealed class OverlayForm : Form
         return font;
     }
 
-    static Size Measure(string s, Font f) => string.IsNullOrEmpty(s) ? Size.Empty : TextRenderer.MeasureText(s, f, Size.Empty, Flags);
+    // Text is drawn with GDI+ (anti-aliased), which keeps solid text on a see-through background.
+    static readonly StringFormat Typo = MakeTypo();
+    static StringFormat MakeTypo()
+    {
+        var f = (StringFormat)StringFormat.GenericTypographic.Clone();
+        f.FormatFlags |= StringFormatFlags.MeasureTrailingSpaces | StringFormatFlags.NoWrap | StringFormatFlags.NoClip;
+        return f;
+    }
+    static readonly Graphics MeasureG = MakeMeasureG();
+    static Graphics MakeMeasureG()
+    {
+        var g = Graphics.FromImage(new Bitmap(1, 1));
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+        return g;
+    }
+
+    /// <summary>Ascent + descent in pixels: the text's own height, without the extra line gap under it.</summary>
+    static int GlyphHeight(Font f)
+    {
+        var fam = f.FontFamily;
+        var em = fam.GetEmHeight(f.Style);
+        return (int)Math.Ceiling((fam.GetCellAscent(f.Style) + fam.GetCellDescent(f.Style)) * f.Size / em);
+    }
+
+    static Size Measure(string s, Font f)
+    {
+        if (string.IsNullOrEmpty(s)) return Size.Empty;
+        var sz = MeasureG.MeasureString(s, f, PointF.Empty, Typo);
+        return new Size((int)Math.Ceiling(sz.Width), f.Height);
+    }
 
     void UpdateSize()
     {
@@ -190,31 +278,59 @@ sealed class OverlayForm : Form
         if (ClientSize != size) ClientSize = size;
     }
 
-    protected override void OnPaint(PaintEventArgs e) => Render(e.Graphics);
+    // Windows ignores WM_PAINT for this kind of window; Redraw() does the drawing.
+    protected override void OnPaint(PaintEventArgs e) { }
+
+    static System.Drawing.Drawing2D.GraphicsPath Rounded(RectangleF r, float radius)
+    {
+        var d = radius * 2;
+        var p = new System.Drawing.Drawing2D.GraphicsPath();
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
 
     /// <summary>Draws the overlay (when g is set) and returns its size in pixels.</summary>
     Size Render(Graphics? g)
     {
         // The graph view takes exactly the space the numbers would, so switching doesn't move anything.
-        var size = RenderNumbers(_view.Graph == null ? g : null);
-        if (_view.Graph != null) RenderGraph(g, size);
+        var size = RenderNumbers(null);
+        if (g == null) return size;
 
-        if (g != null && _view.Dot is Color dot)
+        // glass background: rounded, see-through gradient, thin light edge (gold while moving)
+        var smooth = g.SmoothingMode;
+        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var rect = new RectangleF(0.5f, 0.5f, size.Width - 1, size.Height - 1);
+        using (var path = Rounded(rect, Px(12)))
         {
-            var d = Px(7);
-            var old = g.SmoothingMode;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            using var b = new SolidBrush(dot);
-            g.FillEllipse(b, size.Width - Px(2) - Px(7) - d, Px(2) + Px(7), d, d);
-            g.SmoothingMode = old;
+            using (var bg = new System.Drawing.Drawing2D.LinearGradientBrush(new RectangleF(0, 0, size.Width, size.Height), GlassTop, GlassBottom, 70f))
+                g.FillPath(bg, path);
+            using var edge = new Pen(_moving ? Gold : GlassEdge, _moving ? Px(2) : 1);
+            g.DrawPath(edge, path);
         }
+        g.SmoothingMode = smooth;
 
-        if (g != null && _moving)
+        if (_view.Graph == null) RenderNumbers(g);
+        else RenderGraph(g, size);
+
+        if (_view.Dot is Color dot)
         {
-            var border = Px(2);
-            using var pen = new Pen(Gold, border);
-            var half = border / 2f;
-            g.DrawRectangle(pen, half, half, size.Width - border, size.Height - border);
+            // small dot with a soft glow, top-right corner
+            var d = Px(7);
+            float cx = size.Width - Px(13), cy = Px(13);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            for (var i = 3; i >= 1; i--)
+            {
+                var r = d / 2f + i * Px(2);
+                using var glow = new SolidBrush(Color.FromArgb(28, dot));
+                g.FillEllipse(glow, cx - r, cy - r, r * 2, r * 2);
+            }
+            using var b = new SolidBrush(dot);
+            g.FillEllipse(b, cx - d / 2f, cy - d / 2f, d, d);
+            g.SmoothingMode = smooth;
         }
         return size;
     }
@@ -387,14 +503,15 @@ sealed class OverlayForm : Form
             var sizeW = contentW / Math.Max(items.Count, minCols);
             var scale = widest > 0 ? Math.Clamp(sizeW * fill / widest, 1f, maxScale) : 1f;
             var f = Sized(baseFont, baseFont.Size * scale);
+            var numH = GlyphHeight(f);
             for (var i = 0; i < items.Count; i++)
             {
                 var h = items[i];
                 var mid = x0 + i * colW + colW / 2;
                 DrawStr(g, h.Value, f, h.Color ?? Fg, mid - Measure(h.Value, f).Width / 2, y);
-                DrawStr(g, h.Label, _fSmall, Dim, mid - Measure(h.Label, _fSmall).Width / 2, y + f.Height);
+                DrawStr(g, h.Label, _fSmall, Dim, mid - Measure(h.Label, _fSmall).Width / 2, y + numH);
             }
-            y += f.Height + _fSmall.Height;
+            y += numH + _fSmall.Height;
         }
         NumberRow(v.Headline, _fBig, 0.72f, 2, 1.35f);
 
@@ -428,7 +545,7 @@ sealed class OverlayForm : Form
                     HLine(g, x0, right, y);
                     y += Px(1) + Px(3);
                 }
-                DrawStr(g, r.Label, _fText, r.LabelColor ?? Dim, x0, y + (rowH - _fText.Height) / 2);
+                DrawStr(g, r.Label, _fText, r.LabelColor ?? Soft, x0, y + (rowH - _fText.Height) / 2);
                 for (var i = 0; i < r.Cells.Length && i < rights.Length; i++)
                 {
                     var key = t.IsKey(r, i);
@@ -471,7 +588,9 @@ sealed class OverlayForm : Form
 
     static void DrawStr(Graphics? g, string s, Font f, Color c, int x, int y)
     {
-        if (g != null && !string.IsNullOrEmpty(s)) TextRenderer.DrawText(g, s, f, new Point(x, y), c, Flags);
+        if (g == null || string.IsNullOrEmpty(s)) return;
+        using var b = new SolidBrush(c);
+        g.DrawString(s, f, b, x, y, Typo);
     }
 
     static void DrawRight(Graphics? g, string s, Font f, Color c, int right, int y)
@@ -487,13 +606,5 @@ sealed class OverlayForm : Form
     }
 
     /// <summary>The overlay as a picture (for checking the design without showing it).</summary>
-    public Bitmap Snapshot()
-    {
-        var size = Render(null);
-        var bmp = new Bitmap(size.Width, size.Height);
-        using var g = Graphics.FromImage(bmp);
-        g.Clear(Bg);
-        Render(g);
-        return bmp;
-    }
+    public Bitmap Snapshot() => RenderBitmap();
 }

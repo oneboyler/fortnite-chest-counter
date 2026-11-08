@@ -61,7 +61,7 @@ static class OverlayModel
         v.Headline2.Add((s.Games > 0 ? s.PerGame.ToString("F1") : none, "AVERAGE", null));
         v.Headline2.Add((s.BestGame?.Chests.ToString() ?? none, "BEST GAME", null));
         if (s.HasTreasureCounts)
-            v.Headline2.Add((s.Treasures.ToString("N0"), "TREASURES", flashing && s.LastGame?.Match.OwnTreasures > 0 ? flash!.Color : null));
+            v.Headline2.Add((s.Treasures.ToString("N0"), "TREASURES", flashing && s.LastGame?.Match.OwnTreasures > 0 ? flash!.Color : OverlayForm.Gold));
 
         // by mode: chests | games | per game | per min
         static string PerMin(IEnumerable<Stats.GameStats> games)

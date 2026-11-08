@@ -47,7 +47,9 @@ From v1.3 on, the app tells you when a new version is out. Right-click the tray 
 
 ## Privacy
 
-It only reads the replay files in `%LOCALAPPDATA%\FortniteGame\Saved\Demos` and writes its own `data` folder next to the exe. It sends nothing about you or your games anywhere. Its only internet use is the update check: it asks GitHub for the latest release on start and every 6 hours (turn it off in the tray menu), and downloads an update only when you click it.
+Everything stays on your PC. The app reads your Fortnite replays and keeps its counts in a `data` folder next to it.
+
+It only goes online to see if there's a new version on GitHub. You can turn that off in the tray menu.
 
 ## Building
 

@@ -73,10 +73,9 @@ Replays are read from %LOCALAPPDATA%\FortniteGame\Saved\Demos.
 Replay recording must be on in Fortnite (Settings > Game > Replays).
 Nothing to install: unzip the folder anywhere (not inside Program Files) and run it.
 Windows may say "Windows protected your PC" the first time, because the app isn't
-signed. Click "More info" > "Run anyway". It only reads your replay files and
-sends nothing about you or your games anywhere. Its only internet use: it asks
-GitHub for the latest version number on start and every 6 hours (tray menu >
-"Check for updates" turns that off), and downloads an update when you click it.
+signed. Click "More info" > "Run anyway".
+Everything stays on your PC. It only goes online to see if there's a new
+version on GitHub (tray menu > "Check for updates" turns that off).
 
 HOW IT COUNTS
   Chests      Normal, rare and relic chests, buried treasure and booty chests.

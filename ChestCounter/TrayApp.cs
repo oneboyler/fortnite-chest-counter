@@ -97,6 +97,7 @@ sealed class TrayApp : ApplicationContext
         _overlay = new OverlayForm { MoveMenu = _menu };
         _overlay.MoveEnded += () =>
         {
+            _pageCenter = null;
             _settings.Left = _overlay.Left;
             _settings.Top = _overlay.Top;
             _settings.Save(_dataDir);
@@ -341,12 +342,29 @@ sealed class TrayApp : ApplicationContext
     static readonly int[] PageOrder = [Settings.PageFull, Settings.PageGraph, Settings.PageCompact];
     void NextPage() => SetPage(PageOrder[(Array.IndexOf(PageOrder, _settings.Page) + 1) % PageOrder.Length]);
 
+    // Where the middle of the overlay is, so switching views keeps it centered on the same spot
+    // (kept as exact numbers so going round the views many times doesn't creep). Reset when it's moved.
+    PointF? _pageCenter;
+
     void SetPage(int page)
     {
         if (!_overlay.Visible) ToggleVisible();
+        var b = _overlay.Bounds;
+        _pageCenter ??= new PointF(b.Left + b.Width / 2f, b.Top + b.Height / 2f);
         _settings.Page = Math.Clamp(page, 0, Settings.PageCount - 1);
-        _settings.Save(_dataDir);
         RefreshView();
+
+        var c = _pageCenter.Value;
+        var size = _overlay.Size;
+        var screen = Screen.FromPoint(Point.Round(c)).WorkingArea;
+        var x = (int)Math.Round(c.X - size.Width / 2f);
+        var y = (int)Math.Round(c.Y - size.Height / 2f);
+        x = Math.Max(screen.Left, Math.Min(x, screen.Right - size.Width));
+        y = Math.Max(screen.Top, Math.Min(y, screen.Bottom - size.Height));
+        _overlay.Location = new Point(x, y);
+        _settings.Left = x;
+        _settings.Top = y;
+        _settings.Save(_dataDir);
     }
 
     void NewSession()

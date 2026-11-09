@@ -26,7 +26,7 @@ On the first start, a setup window checks two things and explains the keys:
 | --- | --- |
 | F8 | Hide / show the overlay |
 | Shift+F8 | Move it: drag it with the mouse, then Shift+F8 again to lock it |
-| Ctrl+F8 | Switch view: full, compact (just the main numbers), or a graph of chests per game |
+| Ctrl+F8 | Switch view: full, a graph of chests per game, or compact (just the main numbers) |
 
 To use other keys, right-click the tray icon > **Change keys**, click a key and press the new one. Any key or a mouse side button works, with or without Ctrl/Shift/Alt.
 

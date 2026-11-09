@@ -432,7 +432,7 @@ sealed class SetupForm : Form
         // ---- keys ----
         var customKeys = !_keys.SequenceEqual(HotKey.Defaults);
         Section("KEYS  (work while you play)", customKeys ? "resetkeys" : null, "RESET TO F8");
-        string[] actions = ["Hide / show the overlay", "Move it: drag with the mouse, press again to lock", "Switch view: full, compact, graph"];
+        string[] actions = ["Hide / show the overlay", "Move it: drag with the mouse, press again to lock", "Switch view: full, graph, compact"];
         // the key column fits the widest key, e.g. "Ctrl + Shift + Mouse 4"
         int CapW(string s) => Math.Max(Px(30), TextW(s, _key) + Px(18));
         int plusW = Px(4) + TextW("+", _key) + Px(4);

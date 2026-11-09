@@ -12,10 +12,10 @@ HOW TO USE
                       Fortnite keeps the replay locked until the game ends.)
 
     F8                Hide / show the overlay.
-    Ctrl+F8           Switch view: full, compact (last game, total chests, games,
-                      best game, treasures) and a graph of chests per game
-                      (bars = each game, gold line = average of your last 10 games,
-                      dashed line = all-time average). Shows your last 100 games.
+    Ctrl+F8           Switch view: full, a graph of chests per game (bars = each
+                      game, gold line = average of your last 10 games, dashed line =
+                      all-time average, shows your last 100 games) and compact (last
+                      game, total chests, games, best game, treasures).
     Shift+F8          Move mode: drag it with the mouse, right-click it for the menu.
                       Shift+F8 again locks it; then clicks go straight through it.
                       The keys only read whether they're held, so the game still gets them.

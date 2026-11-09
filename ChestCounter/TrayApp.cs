@@ -337,7 +337,9 @@ sealed class TrayApp : ApplicationContext
         RefreshView();
     }
 
-    void NextPage() => SetPage((_settings.Page + 1) % Settings.PageCount);
+    // the switch-view key goes full -> graph -> compact -> full
+    static readonly int[] PageOrder = [Settings.PageFull, Settings.PageGraph, Settings.PageCompact];
+    void NextPage() => SetPage(PageOrder[(Array.IndexOf(PageOrder, _settings.Page) + 1) % PageOrder.Length]);
 
     void SetPage(int page)
     {

@@ -18,10 +18,12 @@ HOW TO USE
                       dashed line = all-time average). Shows your last 100 games.
     Shift+F8          Move mode: drag it with the mouse, right-click it for the menu.
                       Shift+F8 again locks it; then clicks go straight through it.
-                      F8 only reads whether the key is held, so the game still gets it.
+                      The keys only read whether they're held, so the game still gets them.
+    Other keys        Tray icon > Change keys: click a key, then press the new one (any key
+                      or a mouse side button, with or without Ctrl/Shift/Alt).
     Tray icon         Left-click = hide/show. Right-click = menu: Show graph, New session,
                       Compact view, Windows pop-up after each game, Start with Windows, Full report,
-                      Setup and help, open the replay/data folder, Exit.
+                      Change keys, Setup and help, open the replay/data folder, Exit.
     First start       A setup window checks that Fortnite records replays and runs in
                       Windowed Fullscreen, explains the keys, and offers Start with Windows.
 
@@ -62,7 +64,7 @@ WHERE THINGS ARE
   data\matches.json   Every game it has read.
   data\matches.csv    One row per game. Opens in Excel / Google Sheets.
   data\treasure.txt   What counts as "treasure". Edit it, then restart the app.
-  data\settings.json  Window position and tray options.
+  data\settings.json  Window position, keys and tray options.
   app\ChestStats.exe  The program behind Chest Stats.bat.
   Source code         github.com/oneboyler/fortnite-chest-counter
                       build.bat rebuilds both programs (needs the .NET 9 SDK;

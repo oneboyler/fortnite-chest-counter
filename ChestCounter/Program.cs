@@ -17,11 +17,14 @@ static class Program
             return;
         }
 
-        // Build helper: saves a picture of the setup window.
+        // Build helper: saves a picture of the setup window. Optional: --keys=F9,Shift+F9,XButton1 to show other keys.
         if (args.Length >= 2 && args[0] == "--snapshot-setup")
         {
             ApplicationConfiguration.Initialize();
-            using var setup = new SetupForm(args.Length >= 3 ? args[2] : SquadChests.Scanner.DefaultReplayDir(), true);
+            var keyArg = args.FirstOrDefault(a => a.StartsWith("--keys="))?["--keys=".Length..].Split(',');
+            var keys = keyArg?.Select((s, i) => HotKey.Parse(s, HotKey.Defaults[i])).ToArray();
+            var dir = args.Length >= 3 && !args[2].StartsWith("--") ? args[2] : SquadChests.Scanner.DefaultReplayDir();
+            using var setup = new SetupForm(dir, true, keys);
             using var pic = setup.Snapshot();
             pic.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
             return;
@@ -40,7 +43,7 @@ static class Program
             var flash = args.Contains("--flash") ? new Flash("+67", OverlayForm.Green, now.AddSeconds(20)) : null;
             using var form = new OverlayForm();
             form.SetView(OverlayModel.Build(sum, inGame != null ? SquadChests.GameWatcher.InGameStatus : SquadChests.GameWatcher.WatchingStatus,
-                null, inGame, null, flash, args.Contains("--hint") ? "F8 hide/show   Shift+F8 move   Ctrl+F8 page\ncounts update right after each game" : null, OverlayForm.Dim, now,
+                null, inGame, null, flash, args.Contains("--hint") ? HotKey.Hint(HotKey.Defaults) : null, OverlayForm.Dim, now,
                 args.Contains("--graph") ? Settings.PageGraph : args.Contains("--compact") ? Settings.PageCompact : Settings.PageFull));
             using var bmp = form.Snapshot();
             bmp.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);

@@ -10,7 +10,7 @@ sealed class Settings
     public int? Left { get; set; }
     public int? Top { get; set; }
     public bool OverlayVisible { get; set; } = true;
-    /// <summary>Overlay page, Ctrl+F8 cycles: full numbers, compact, graph.</summary>
+    /// <summary>Overlay page, the "switch view" key (Ctrl+F8) cycles: full numbers, compact, graph.</summary>
     public int Page { get; set; }
     public const int PageFull = 0, PageCompact = 1, PageGraph = 2, PageCount = 3;
     /// <summary>Windows pop-up after each game. The overlay already flashes "+N", so off by default.</summary>
@@ -21,6 +21,10 @@ sealed class Settings
     public bool SetupDone { get; set; }
     /// <summary>Ask GitHub for a newer version on start and every few hours (the app's only internet use).</summary>
     public bool CheckForUpdates { get; set; } = true;
+    /// <summary>The keys (see HotKey): hide/show, move, switch view. Changed in the setup window.</summary>
+    public string KeyHide { get; set; } = "F8";
+    public string KeyMove { get; set; } = "Shift+F8";
+    public string KeyPage { get; set; } = "Ctrl+F8";
 
     static string FileIn(string dataDir) => Path.Combine(dataDir, "settings.json");
 

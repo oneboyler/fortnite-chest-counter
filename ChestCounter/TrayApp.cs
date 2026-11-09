@@ -25,7 +25,8 @@ sealed class TrayApp : ApplicationContext
     Stats.Summary _sum = new();
     Flash? _flash;
     int _refreshQueued;
-    bool _f8WasDown;
+    HotKey[] _hotkeys;
+    readonly HashSet<Keys> _keysDown = new();
     int _ticks;
 
     public TrayApp()
@@ -33,15 +34,16 @@ sealed class TrayApp : ApplicationContext
         _dataDir = Path.Combine(AppContext.BaseDirectory, "data");
         Directory.CreateDirectory(_dataDir);
         _settings = Settings.Load(_dataDir);
+        _hotkeys = HotKey.Load(_settings);
         _treasure = Stats.LoadTreasurePatterns(_dataDir);
         _watcher = new GameWatcher(Scanner.DefaultReplayDir(), _dataDir);
 
         // ---- menu (tray icon right-click, and overlay right-click in move mode) ----
-        _miShow = new ToolStripMenuItem("Hide overlay", null, (_, _) => ToggleVisible()) { ShortcutKeyDisplayString = "F8" };
-        _miMove = new ToolStripMenuItem("Move overlay", null, (_, _) => ToggleMove()) { ShortcutKeyDisplayString = "Shift+F8" };
-        // pages: full / compact / graph (Ctrl+F8 cycles through them)
-        _miCompact = new ToolStripMenuItem("Compact view", null, (_, _) => SetPage(_settings.Page == Settings.PageCompact ? Settings.PageFull : Settings.PageCompact)) { ShortcutKeyDisplayString = "Ctrl+F8" };
-        _miGraph = new ToolStripMenuItem("Show graph", null, (_, _) => SetPage(_settings.Page == Settings.PageGraph ? Settings.PageFull : Settings.PageGraph)) { ShortcutKeyDisplayString = "Ctrl+F8" };
+        _miShow = new ToolStripMenuItem("Hide overlay", null, (_, _) => ToggleVisible());
+        _miMove = new ToolStripMenuItem("Move overlay", null, (_, _) => ToggleMove());
+        // pages: full / compact / graph (the switch-view key cycles through them)
+        _miCompact = new ToolStripMenuItem("Compact view", null, (_, _) => SetPage(_settings.Page == Settings.PageCompact ? Settings.PageFull : Settings.PageCompact));
+        _miGraph = new ToolStripMenuItem("Show graph", null, (_, _) => SetPage(_settings.Page == Settings.PageGraph ? Settings.PageFull : Settings.PageGraph));
         _miNotify = new ToolStripMenuItem("Windows pop-up after each game", null, (_, _) =>
         {
             _settings.NotifyAfterGame = !_settings.NotifyAfterGame;
@@ -70,6 +72,7 @@ sealed class TrayApp : ApplicationContext
             _miNotify, _miStartup, _miAutoUpdate,
             new ToolStripSeparator(),
             new ToolStripMenuItem("Full report (per mode, teammates...)", null, (_, _) => OpenReport()),
+            new ToolStripMenuItem("Change keys", null, (_, _) => ShowSetup()),
             new ToolStripMenuItem("Setup and help", null, (_, _) => ShowSetup()),
             new ToolStripMenuItem("Open replay folder", null, (_, _) => OpenFolder(_watcher.Scanner.ReplayDir)),
             new ToolStripMenuItem("Open data folder", null, (_, _) => OpenFolder(_dataDir)),
@@ -85,6 +88,9 @@ sealed class TrayApp : ApplicationContext
             _miNotify.Checked = _settings.NotifyAfterGame;
             _miStartup.Checked = StartWithWindows.IsOn();
             _miAutoUpdate.Checked = _settings.CheckForUpdates;
+            _miShow.ShortcutKeyDisplayString = _hotkeys[HotKey.Hide].ToString();
+            _miMove.ShortcutKeyDisplayString = _hotkeys[HotKey.Move].ToString();
+            _miCompact.ShortcutKeyDisplayString = _miGraph.ShortcutKeyDisplayString = _hotkeys[HotKey.Page].ToString();
         };
 
         // ---- overlay ----
@@ -110,7 +116,7 @@ sealed class TrayApp : ApplicationContext
         _watcher.Changed += QueueRefresh;
         _watcher.GameAdded += m => OnUi(() => OnGameAdded(m));
 
-        // F8 = hide/show, Shift+F8 = move. Only reads whether the key is held, so the game still gets the key too.
+        // F8 = hide/show, Shift+F8 = move, Ctrl+F8 = switch view (changeable). Only reads whether the key is held, so the game still gets the key too.
         _keys = new System.Windows.Forms.Timer { Interval = 30 };
         _keys.Tick += (_, _) => PollKeys();
         _keys.Start();
@@ -182,7 +188,16 @@ sealed class TrayApp : ApplicationContext
     {
         if (_setup is { IsDisposed: false }) { _setup.Activate(); return; }
         // first start: suggest starting with Windows; later: show what it's set to now
-        _setup = new SetupForm(_watcher.Scanner.ReplayDir, _settings.SetupDone ? StartWithWindows.IsOn() : true);
+        _setup = new SetupForm(_watcher.Scanner.ReplayDir, _settings.SetupDone ? StartWithWindows.IsOn() : true, _hotkeys);
+        _setup.KeysChanged += keys =>
+        {
+            _hotkeys = keys;
+            HotKey.Store(_settings, keys);
+            _settings.Save(_dataDir);
+            // the key just pressed to pick it is still held: don't let that count as a press
+            foreach (var k in keys) if (Native.IsDown((int)k.Key)) _keysDown.Add(k.Key);
+            RefreshView();
+        };
         _setup.FormClosed += (_, _) =>
         {
             try { if (_setup!.StartWithWindowsChecked != StartWithWindows.IsOn()) StartWithWindows.Set(_setup.StartWithWindowsChecked); }
@@ -223,7 +238,7 @@ sealed class TrayApp : ApplicationContext
         var hintColor = OverlayForm.Dim;
         if (_overlay.Moving)
         {
-            hint = "drag to move  -  right-click for menu\nShift+F8 again to lock";
+            hint = $"drag to move  -  right-click for menu\n{_hotkeys[HotKey.Move]} again to lock";
             hintColor = OverlayForm.Gold;
         }
         else if (_update != null && !_updating && DateTime.Now - _updateFoundAt < TimeSpan.FromMinutes(2))
@@ -233,7 +248,7 @@ sealed class TrayApp : ApplicationContext
         }
         else if (DateTime.Now - _startedAt < TimeSpan.FromSeconds(15))
         {
-            hint = "F8 hide/show   Shift+F8 move   Ctrl+F8 page\ncounts update right after each game";
+            hint = HotKey.Hint(_hotkeys);
         }
 
         _overlay.SetView(OverlayModel.Build(_sum, _watcher.Status, _watcher.ScanProgress, _watcher.InGameSince,
@@ -274,14 +289,28 @@ sealed class TrayApp : ApplicationContext
 
     void PollKeys()
     {
-        var down = Native.IsDown(Native.VK_F8);
-        if (down && !_f8WasDown)
+        bool ctrl = Native.IsDown(Native.VK_CONTROL), shift = Native.IsDown(Native.VK_SHIFT), alt = Native.IsDown(Native.VK_MENU);
+        int best = -1;
+        foreach (var key in _hotkeys.Select(h => h.Key).Distinct())
         {
-            if (Native.IsDown(Native.VK_SHIFT)) ToggleMove();
-            else if (Native.IsDown(Native.VK_CONTROL)) NextPage();
-            else ToggleVisible();
+            var down = Native.IsDown((int)key);
+            var pressed = down && !_keysDown.Contains(key);
+            if (down) _keysDown.Add(key); else _keysDown.Remove(key);
+            if (!pressed) continue;
+            // e.g. Shift+F8 matches both "F8" and "Shift+F8": the one with more held modifiers wins
+            for (var i = 0; i < _hotkeys.Length; i++)
+                if (_hotkeys[i].Key == key && _hotkeys[i].ModsHeld(ctrl, shift, alt)
+                    && (best < 0 || _hotkeys[i].ModCount > _hotkeys[best].ModCount))
+                    best = i;
         }
-        _f8WasDown = down;
+        // while picking a new key in the setup window, keys only pick
+        if (best < 0 || _setup is { IsDisposed: false, Picking: true }) return;
+        switch (best)
+        {
+            case HotKey.Hide: ToggleVisible(); break;
+            case HotKey.Move: ToggleMove(); break;
+            case HotKey.Page: NextPage(); break;
+        }
     }
 
     void ToggleVisible()

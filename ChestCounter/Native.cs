@@ -9,10 +9,14 @@ static partial class Native
     public const int WM_NCLBUTTONDOWN = 0xA1, HTCAPTION = 2;
     public const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOACTIVATE = 0x10;
     public static readonly IntPtr HWND_TOPMOST = new(-1);
-    public const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_F8 = 0x77;
+    public const int VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
+    public const uint MAPVK_VK_TO_CHAR = 2;
 
     [LibraryImport("user32.dll")]
     public static partial short GetAsyncKeyState(int vKey);
+
+    [LibraryImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    public static partial uint MapVirtualKey(uint code, uint mapType);
 
     public static bool IsDown(int vKey) => (GetAsyncKeyState(vKey) & 0x8000) != 0;
 

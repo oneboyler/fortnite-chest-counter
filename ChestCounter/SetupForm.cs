@@ -56,6 +56,12 @@ sealed class SetupForm : Form
     SetupChecks.Check[] _checks = [];
     public bool StartWithWindowsChecked { get; private set; }
 
+    // the keys; click one, then press the new key (or a mouse side button)
+    readonly HotKey[] _keys;
+    int _picking = -1;
+    public bool Picking => _picking >= 0;
+    public event Action<HotKey[]>? KeysChanged;
+
     // clickable areas from the last layout, and what the mouse is over / pressed on
     readonly Dictionary<string, Rectangle> _hits = new();
     string? _hover, _pressed;
@@ -66,9 +72,10 @@ sealed class SetupForm : Form
     float K => DeviceDpi / 96f;
     int Px(float v) => (int)Math.Round(v * K);
 
-    public SetupForm(string replayDir, bool startWithWindows)
+    public SetupForm(string replayDir, bool startWithWindows, HotKey[]? keys = null)
     {
         _replayDir = replayDir;
+        _keys = (HotKey[])(keys ?? HotKey.Defaults).Clone();
         StartWithWindowsChecked = startWithWindows;
         Text = "Chest Counter - setup";
         Icon = ChestArt.Icon(32);
@@ -142,7 +149,15 @@ sealed class SetupForm : Form
     protected override void OnMouseDown(MouseEventArgs e)
     {
         base.OnMouseDown(e);
+        if (Picking && e.Button is MouseButtons.Middle or MouseButtons.XButton1 or MouseButtons.XButton2)
+        {
+            var k = e.Button switch { MouseButtons.Middle => Keys.MButton, MouseButtons.XButton1 => Keys.XButton1, _ => Keys.XButton2 };
+            SetKey(new HotKey(k, ModifierKeys.HasFlag(Keys.Control), ModifierKeys.HasFlag(Keys.Shift), ModifierKeys.HasFlag(Keys.Alt)));
+            return;
+        }
         if (e.Button != MouseButtons.Left) return;
+        // clicking anywhere but another key stops picking
+        if (Picking && HitTest(e.Location)?.StartsWith("key") != true) StopPicking();
         _pressed = HitTest(e.Location);
         if (_pressed == null)
         {
@@ -165,14 +180,70 @@ sealed class SetupForm : Form
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (Picking)
+        {
+            e.Handled = e.SuppressKeyPress = true;
+            if (e.KeyCode == Keys.Escape) StopPicking();
+            else if (HotKey.Usable(e.KeyCode)) SetKey(new HotKey(e.KeyCode, e.Control, e.Shift, e.Alt));
+            // a modifier on its own: wait for the key that goes with it
+            return;
+        }
         if (e.KeyCode is Keys.Enter or Keys.Escape) Close();
         else if (e.KeyCode == Keys.Space) Act("startup");
     }
 
+    // while picking, every key (Tab, the arrows, Alt+..., F10) goes to the picker instead of Windows
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (Picking)
+        {
+            OnKeyDown(new KeyEventArgs(keyData));
+            return true;
+        }
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    protected override void OnDeactivate(EventArgs e)
+    {
+        base.OnDeactivate(e);
+        StopPicking();
+    }
+
+    void StopPicking()
+    {
+        if (!Picking) return;
+        _picking = -1;
+        Redraw();
+    }
+
+    void SetKey(HotKey k)
+    {
+        var i = _picking;
+        _picking = -1;
+        // already used by another action: those two swap
+        var j = Array.IndexOf(_keys, k);
+        if (j >= 0 && j != i) _keys[j] = _keys[i];
+        _keys[i] = k;
+        KeysChanged?.Invoke((HotKey[])_keys.Clone());
+        Redraw();
+    }
+
     void Act(string what)
     {
+        if (what.StartsWith("key"))
+        {
+            var i = what[3] - '0';
+            _picking = _picking == i ? -1 : i;
+            Redraw();
+            return;
+        }
         switch (what)
         {
+            case "resetkeys":
+                HotKey.Defaults.CopyTo(_keys, 0);
+                _picking = -1;
+                KeysChanged?.Invoke((HotKey[])_keys.Clone());
+                break;
             case "done":
             case "close":
                 Close();
@@ -295,12 +366,22 @@ sealed class SetupForm : Form
         y += Para(g, "Counts the chests you open or break and the season treasures you get, straight from your " +
                      "Fortnite replays. It runs quietly in the tray, next to the clock.", _sub, OverlayForm.Dim, pad, y, inner);
 
-        void Section(string name)
+        // section title and a line; optionally a small text button at the right end
+        void Section(string name, string? linkId = null, string? linkText = null)
         {
             y += Px(20);
             Str(g, name, _section, OverlayForm.Dim, pad, y);
             var tw = TextW(name, _section);
-            if (g != null) using (var b = new SolidBrush(Line)) g.FillRectangle(b, pad + tw + Px(10), y + _section.Height / 2, inner - tw - Px(10), 1);
+            var lineEnd = pad + inner;
+            if (linkId != null && linkText != null)
+            {
+                var lw = TextW(linkText, _section);
+                var r = new Rectangle(pad + inner - lw - Px(6), y - Px(4), lw + Px(12), _section.Height + Px(8));
+                _hits[linkId] = r;
+                Str(g, linkText, _section, _hover == linkId ? OverlayForm.Fg : OverlayForm.Gold, pad + inner - lw, y);
+                lineEnd = r.X - Px(6);
+            }
+            if (g != null) using (var b = new SolidBrush(Line)) g.FillRectangle(b, pad + tw + Px(10), y + _section.Height / 2, lineEnd - pad - tw - Px(10), 1);
             y += _section.Height + Px(10);
         }
 
@@ -349,34 +430,47 @@ sealed class SetupForm : Form
         y -= Px(12);
 
         // ---- keys ----
-        Section("KEYS  (work while you play)");
-        foreach (var (keys, what) in new[]
-                 {
-                     (new[] { "F8" }, "Hide / show the overlay"),
-                     (new[] { "Shift", "F8" }, "Move it: drag with the mouse, press again to lock"),
-                     (new[] { "Ctrl", "F8" }, "Switch view: full, compact, graph"),
-                 })
+        var customKeys = !_keys.SequenceEqual(HotKey.Defaults);
+        Section("KEYS  (work while you play)", customKeys ? "resetkeys" : null, "RESET TO F8");
+        string[] actions = ["Hide / show the overlay", "Move it: drag with the mouse, press again to lock", "Switch view: full, compact, graph"];
+        // the key column fits the widest key, e.g. "Ctrl + Shift + Mouse 4"
+        int CapW(string s) => Math.Max(Px(30), TextW(s, _key) + Px(18));
+        int plusW = Px(4) + TextW("+", _key) + Px(4);
+        int KeysW(string[] parts) => parts.Sum(CapW) + plusW * (parts.Length - 1);
+        var descX = pad + Math.Max(Px(132), _keys.Max(k => KeysW(k.Parts())) + Px(22));
+        for (var row = 0; row < HotKey.Count; row++)
         {
-            var x = pad;
+            var id = "key" + row;
             var capH = Px(26);
+            var picking = _picking == row;
+            var hover = _hover == id && !picking;
+            var what = picking ? "Press the new key or a mouse side button. Esc cancels." : actions[row];
+            var descW = pad + inner - descX;
+            var descH = Para(null, what, _text, OverlayForm.Soft, descX, y, descW);
+            var keyRowH = Math.Max(capH, descH);
+            _hits[id] = new Rectangle(pad - Px(6), y - Px(3), inner + Px(12), keyRowH + Px(6));
+            if (picking || hover) Fill(g, _hits[id], Px(8), Color.FromArgb(picking ? 26 : 14, 255, 255, 255), picking ? Color.FromArgb(140, OverlayForm.Gold) : null);
+            var keys = picking ? ["press a key"] : _keys[row].Parts();
+            var x = pad;
             for (var i = 0; i < keys.Length; i++)
             {
                 if (i > 0)
                 {
                     Str(g, "+", _key, OverlayForm.Dim, x + Px(4), y + (capH - _key.Height) / 2f);
-                    x += Px(4) + TextW("+", _key) + Px(4);
+                    x += plusW;
                 }
-                var cw = Math.Max(Px(30), TextW(keys[i], _key) + Px(18));
-                Fill(g, new RectangleF(x, y, cw, capH), Px(6), Color.FromArgb(22, 255, 255, 255), Color.FromArgb(55, 255, 255, 255));
+                var cw = CapW(keys[i]);
+                Fill(g, new RectangleF(x, y, cw, capH), Px(6), Color.FromArgb(22, 255, 255, 255),
+                    picking ? OverlayForm.Gold : Color.FromArgb(hover ? 110 : 55, 255, 255, 255));
                 if (g != null) using (var under = new SolidBrush(Color.FromArgb(40, 0, 0, 0))) g.FillRectangle(under, x + Px(4), y + capH - Px(1), cw - Px(8), Px(1));
-                Str(g, keys[i], _key, OverlayForm.Fg, x + (cw - TextW(keys[i], _key)) / 2f, y + (capH - _key.Height) / 2f);
+                Str(g, keys[i], _key, picking ? OverlayForm.Gold : OverlayForm.Fg, x + (cw - TextW(keys[i], _key)) / 2f, y + (capH - _key.Height) / 2f);
                 x += cw;
             }
-            var descX = pad + Px(132);
-            Para(g, what, _text, OverlayForm.Soft, descX, y + (capH - _text.Height) / 2, inner - Px(132));
-            y += capH + Px(8);
+            Para(g, what, _text, picking ? OverlayForm.Gold : OverlayForm.Soft, descX, descH < capH ? y + (capH - descH) / 2 : y, descW);
+            y += keyRowH + Px(8);
         }
-        y += Para(g, "Right-click the tray icon for the full report, the graph, Start with Windows and Exit.", _text, OverlayForm.Dim, pad, y + Px(2), inner);
+        y += Para(g, "Click a key to change it. Pick one you don't use in Fortnite. Right-click the tray icon for the full report, " +
+                     "the graph, Start with Windows and Exit.", _text, OverlayForm.Dim, pad, y + Px(2), inner);
 
         // ---- good to know ----
         Section("GOOD TO KNOW");

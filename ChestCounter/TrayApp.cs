@@ -246,7 +246,7 @@ sealed class TrayApp : ApplicationContext
             hint = $"Update {_update.Tag} is out: right-click\nthe chest icon in the tray > Update";
             hintColor = OverlayForm.Gold;
         }
-        else if (DateTime.Now - _startedAt < TimeSpan.FromSeconds(15))
+        else if (DateTime.Now - _startedAt < TimeSpan.FromSeconds(5))
         {
             hint = HotKey.Hint(_hotkeys);
         }

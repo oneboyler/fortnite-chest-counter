@@ -173,17 +173,35 @@ public class LootReader : ReplayReader
     public static MatchResult Read(string path)
     {
         var fi = new FileInfo(path);
-        var result = new MatchResult { File = fi.Name, Size = fi.Length, LastWrite = fi.LastWriteTimeUtc };
+        // Marked with the reader version right away: a replay that can't be parsed is then tried once,
+        // not again on every check (it's tried again when the file changes or the reader gets newer).
+        var result = new MatchResult
+        {
+            File = fi.Name, Size = fi.Length, LastWrite = fi.LastWriteTimeUtc,
+            ReaderVersion = MatchResult.CurrentReaderVersion,
+        };
+
+        // Step 1: get the file into memory, once. Not being able to open it says nothing about the replay itself.
+        byte[] bytes;
         try
         {
             // Fortnite may still have the file open, so allow shared access.
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var ms = new MemoryStream();
-            fs.CopyTo(ms);
-            ms.Position = 0;
+            bytes = GC.AllocateUninitializedArray<byte>(checked((int)fs.Length));
+            fs.ReadExactly(bytes);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            result.Error = $"{ex.GetType().Name}: {ex.Message}";
+            result.CouldNotOpen = true;
+            return result;
+        }
 
+        // Step 2: parse it straight from that one copy.
+        try
+        {
             var reader = new LootReader();
-            var replay = reader.ReadReplay(ms);
+            var replay = reader.ReadReplay((ReadOnlyMemory<byte>)bytes);
             reader.Fill(result, replay);
         }
         catch (Exception ex)

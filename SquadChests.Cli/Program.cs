@@ -46,6 +46,7 @@ switch (cmd)
             var what = c.Opened ? "OPENED" : "DESTROYED";
             Console.WriteLine($"  {TimeSpan.FromSeconds(c.Time):mm\\:ss} {what,-9} {c.Kind,-15} tier={c.Tier} by={c.ByName ?? "?"}{(c.ByIsGuess ? "(guess)" : "")}{(c.DestroyedWith != null ? " via " + c.DestroyedWith : "")}{(c.BySquad ? " [SQUAD]" : "")}{(c.AlreadyOpenWhenSeen ? " (already open when seen)" : "")}  items=[{string.Join(", ", c.Items)}]");
         }
+        Console.WriteLine($"Treasure times: {string.Join(" ", r.TreasureTimes ?? [])}");
         if (args.Contains("--items"))
         {
             Console.WriteLine("Lobby items:");

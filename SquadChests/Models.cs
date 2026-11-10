@@ -6,6 +6,12 @@ public class MatchResult
     public long Size { get; set; }
     public DateTime LastWrite { get; set; }
     public string? Error { get; set; }
+    /// <summary>
+    /// The file couldn't be opened just now (locked, no access), so nothing was read. Not a result: it isn't
+    /// saved, and the replay is tried again on the next check.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool CouldNotOpen { get; set; }
     public bool IsLive { get; set; }
 
     public DateTime? Started { get; set; }
@@ -15,6 +21,8 @@ public class MatchResult
     public int? TeamPlacement { get; set; }
 
     /// <summary>Bumped when the reader starts recording something new, so cached replays get re-read once.</summary>
+    /// <remarks>The next bump must go to 8: 7 was used by an unreleased experiment (ammo/food boxes), and games
+    /// saved while it was on carry that number, so "7" wouldn't get them re-read.</remarks>
     public const int CurrentReaderVersion = 6;
     public int ReaderVersion { get; set; }
     /// <summary>You got at least one season treasure (gizmo, jam track, car...) this game. Null = read by an older version.</summary>

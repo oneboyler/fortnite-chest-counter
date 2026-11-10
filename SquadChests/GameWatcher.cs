@@ -67,7 +67,7 @@ public sealed class GameWatcher
                     ScanProgress = (done, total);
                     Status = $"Reading your replays {done}/{total}...";
                     Changed?.Invoke();
-                });
+                }, saved: Publish);   // the numbers fill in as it goes
                 ScanProgress = null;
                 Publish();
                 if (read > 0) FreeMemory();
@@ -120,6 +120,7 @@ public sealed class GameWatcher
 
             SetStatus("Reading your last game...");
             var r = LootReader.Read(f.FullName);
+            if (r.CouldNotOpen) continue;   // locked or no access right now: try again on the next check
             if (r.IsLive && age < LiveGrace)
             {
                 _stillLive[f.Name] = (f.Length, f.LastWriteTimeUtc);
@@ -129,7 +130,7 @@ public sealed class GameWatcher
             _stillLive.Remove(f.Name);
             r.IsLive = false; // finished, or Fortnite closed without finalizing it
 
-            Scanner.Matches[r.File] = r;
+            Scanner.Store(r);   // a read that failed never replaces an earlier good result
             Scanner.Save();
             Publish();
             if (r.Error == null && r.OwnerId != null) GameAdded?.Invoke(r);

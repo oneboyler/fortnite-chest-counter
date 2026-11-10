@@ -2,8 +2,12 @@ using SquadChests;
 
 namespace ChestCounter;
 
-/// <summary>A short message next to the big number after a game was counted ("+67").</summary>
-record Flash(string Text, Color Color, DateTime Until);
+/// <summary>
+/// What the overlay does for a while after a game was read. A counted game turns LAST GAME this colour.
+/// With ShowText the text is also shown as a line at the bottom: used for the cases the number alone
+/// can't tell you (treasure, or a game that wasn't counted).
+/// </summary>
+record Flash(string Text, Color Color, DateTime Until, bool Counted = true, bool ShowText = false);
 
 /// <summary>Turns the stats into what the overlay shows.</summary>
 static class OverlayModel
@@ -49,28 +53,23 @@ static class OverlayModel
         var compact = page == Settings.PageCompact;
         var v = new OverlayForm.View();
         var session = CurrentSession(s, inGameSince, manualStart, now);
-        var sGames = session.Games;
-        var sChests = sGames.Sum(g => g.Chests);
         const string none = "-";
 
         // top row: chests last game (green for a while after it's counted), total, games, per game
         var flashing = flash != null && now < flash.Until;
-        v.Headline.Add((s.LastGame?.Chests.ToString() ?? none, "LAST GAME", flashing ? flash!.Color : OverlayForm.Gold));
+        // a game that wasn't counted leaves the numbers alone (they still show the last counted game)
+        var lastColor = flashing && flash!.Counted ? flash.Color : OverlayForm.Gold;
+        v.Headline.Add((s.LastGame?.Chests.ToString() ?? none, "LAST GAME", lastColor));
 
         v.Headline.Add((s.Chests.ToString("N0"), "TOTAL CHESTS", null));
+
         v.Headline2.Add((s.Games.ToString("N0"), "GAMES", null));
         if (!compact) v.Headline2.Add((s.Games > 0 ? s.PerGame.ToString("F1") : none, "AVERAGE", null));
         v.Headline2.Add((s.BestGame?.Chests.ToString() ?? none, "BEST GAME", null));
         if (s.HasTreasureCounts)
-            v.Headline2.Add((s.Treasures.ToString("N0"), "TREASURES", flashing && s.LastGame?.Match.OwnTreasures > 0 ? flash!.Color : OverlayForm.Gold));
+            v.Headline2.Add((s.Treasures.ToString("N0"), "TREASURES", s.LastGame?.Match.OwnTreasures > 0 ? lastColor : OverlayForm.Gold));
 
-        // by mode: chests | games | per game | per min
-        static string PerMin(IEnumerable<Stats.GameStats> games)
-        {
-            var list = games.ToList();
-            var min = list.Sum(g => g.Match.LengthSeconds) / 60;
-            return min > 0 ? (list.Sum(g => g.Chests) / min).ToString("F2") : none;
-        }
+        // by mode, then this session: chests | games | best game | per game
         string[] Cells(IEnumerable<Stats.GameStats> games)
         {
             var list = games.ToList();
@@ -80,8 +79,12 @@ static class OverlayModel
         }
 
         if (s.Modes.Count > 0 && !compact)
-            v.Tables.Add(new(["mode", "chests", "games", "best", "p/g"],
-                s.Modes.Select(m => new OverlayForm.TableRow(Short(m.Mode), Cells(s.All.Where(g => g.Mode == m.Mode)), Bold: false)).ToList()));
+        {
+            var rows = s.Modes.Select(m => new OverlayForm.TableRow(Short(m.Mode), Cells(s.All.Where(g => g.Mode == m.Mode)), Bold: false)).ToList();
+            // this session: the games played back to back, or since "New session" in the menu
+            rows.Add(new OverlayForm.TableRow("session", Cells(session.Games), Bold: false, LineBefore: true));
+            v.Tables.Add(new(["mode", "chests", "games", "best", "p/g"], rows));
+        }
 
         if (s.Treasure.Count > 0 && !compact)
             v.Tables.Add(new(null, [new("treasure", [$"{s.Treasure[^1].Items}, {s.Treasure[^1].Match.Started:MMM d}"], OverlayForm.Gold)]));
@@ -108,6 +111,12 @@ static class OverlayModel
         {
             v.Status = text;
             v.StatusColor = color;
+        }
+        // treasure, or a game that wasn't counted: say it in words (nothing more urgent is on that line)
+        if (v.Status == null && flashing && flash!.ShowText)
+        {
+            v.Status = flash.Text;
+            v.StatusColor = flash.Color;
         }
         v.Hint = hint;
         v.HintColor = hintColor;

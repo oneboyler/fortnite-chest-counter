@@ -13,7 +13,7 @@
     <ApplicationVisualStyles>true</ApplicationVisualStyles>
     <Product>Chest Counter</Product>
     <!-- Bump with every GitHub release (tag vX.Y): the update check compares this with the latest release. -->
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <AssemblyTitle>Chest Counter</AssemblyTitle>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon Condition="Exists('chest.ico')">chest.ico</ApplicationIcon>

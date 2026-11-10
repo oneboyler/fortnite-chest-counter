@@ -10,7 +10,10 @@ It sits in the tray and updates a few seconds after each game ends.
 
 ## Download
 
-Get **ChestCounter-win-x64.zip** from [Releases](https://github.com/oneboyler/fortnite-chest-counter/releases/latest), unzip it anywhere (not in Program Files) and run **Chest Counter.exe**. There's nothing to install.
+From [Releases](https://github.com/oneboyler/fortnite-chest-counter/releases/latest), pick one (same program either way):
+
+- **ChestCounter-Setup.exe** installs it for your Windows user (no admin needed) with a Start menu entry. Remove it from Windows Settings > Apps > Installed apps; it asks whether to keep your counted games.
+- **ChestCounter-win-x64.zip** is the portable version: unzip it anywhere (not in Program Files) and run **Chest Counter.exe**. To remove it, untick "Start with Windows" in the tray menu, exit, and delete the folder.
 
 Windows may say "Windows protected your PC" the first time, because the app isn't signed. Click **More info > Run anyway**.
 

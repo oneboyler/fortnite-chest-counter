@@ -7,6 +7,13 @@ static class Program
     const string RunningMutex = @"Local\ChestCounter.Running";
     const string ShowEvent = @"Local\ChestCounter.Show";
 
+    // One pair per program folder, so the installer/uninstaller can close exactly the copy it owns
+    // and leave a portable copy running from somewhere else alone.
+    static readonly string FolderId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+        System.Text.Encoding.UTF8.GetBytes(AppContext.BaseDirectory.TrimEnd('\\', '/').ToUpperInvariant())))[..16];
+    static readonly string FolderMutex = @"Local\ChestCounter.Folder." + FolderId;
+    static readonly string ExitEvent = @"Local\ChestCounter.Exit." + FolderId;
+
     [STAThread]
     static void Main(string[] args)
     {
@@ -40,7 +47,10 @@ static class Program
             // Optional 4th arg: pretend it's this time (e.g. "2026-11-08 05:50") to see a session in progress.
             var now = args.Length >= 4 && !args[3].StartsWith("--") ? DateTime.Parse(args[3], System.Globalization.CultureInfo.InvariantCulture) : DateTime.Now;
             var inGame = args.Contains("--ingame") ? now.AddMinutes(-7) : (DateTime?)null;
-            var flash = args.Contains("--flash") ? new Flash("+67", OverlayForm.Green, now.AddSeconds(20)) : null;
+            var flash = args.Contains("--flash") ? new Flash("+67", OverlayForm.Green, now.AddSeconds(20))
+                : args.Contains("--flash-treasure") ? new Flash("+67 TREASURE!", OverlayForm.Gold, now.AddMinutes(5), ShowText: true)
+                : args.Contains("--flash-skipped") ? new Flash("custom game, not counted", OverlayForm.Dim, now.AddSeconds(20), Counted: false, ShowText: true)
+                : null;
             using var form = new OverlayForm();
             form.SetView(OverlayModel.Build(sum, inGame != null ? SquadChests.GameWatcher.InGameStatus : SquadChests.GameWatcher.WatchingStatus,
                 null, inGame, null, flash, args.Contains("--hint") ? HotKey.Hint(HotKey.Defaults) : null, OverlayForm.Dim, now,
@@ -58,6 +68,24 @@ static class Program
             return;
         }
 
+        // Used by the installer and uninstaller: asks the copy running from this folder to close (the same as
+        // tray icon > Exit) and waits until it has, so its files can be replaced or removed.
+        if (args.Length == 1 && args[0] == "--exit")
+        {
+            try
+            {
+                using (var ev = EventWaitHandle.OpenExisting(ExitEvent)) ev.Set();
+                for (var i = 0; i < 100 && Mutex.TryOpenExisting(FolderMutex, out var m); i++)
+                {
+                    m.Dispose();
+                    Thread.Sleep(100);
+                }
+                Thread.Sleep(300);   // the process needs a moment after its last line to let go of the exe
+            }
+            catch { /* no copy is running from this folder */ }
+            return;
+        }
+
         using var running = new Mutex(true, RunningMutex, out var firstCopy);
         if (!firstCopy)
         {
@@ -66,6 +94,8 @@ static class Program
             return;
         }
         using var showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEvent);
+        using var folder = new Mutex(false, FolderMutex);
+        using var exitEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ExitEvent);
 
         // Stay out of the game's way: reading replays only uses spare CPU.
         try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
@@ -76,8 +106,10 @@ static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) => LogError(dataDir, e.ExceptionObject as Exception);
 
         ApplicationConfiguration.Initialize();
+        Installed.SyncVersion();
         var app = new TrayApp();
         ThreadPool.RegisterWaitForSingleObject(showEvent, (_, _) => app.ShowFromOtherInstance(), null, Timeout.Infinite, executeOnlyOnce: false);
+        ThreadPool.RegisterWaitForSingleObject(exitEvent, (_, _) => app.ExitFromOtherInstance(), null, Timeout.Infinite, executeOnlyOnce: true);
         Application.Run(app);
     }
 

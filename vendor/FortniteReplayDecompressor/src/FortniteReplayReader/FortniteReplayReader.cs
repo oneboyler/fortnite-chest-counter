@@ -46,6 +46,17 @@ public class ReplayReader : Unreal.Core.ReplayReader<FortniteReplay>
         return Builder.Build(Replay);
     }
 
+    /// <summary>Reads a replay that's already in memory, without copying it again. (Added for Chest Counter.)</summary>
+    public FortniteReplay ReadReplay(ReadOnlyMemory<byte> bytes)
+    {
+        using var archive = new Unreal.Core.BinaryReader(bytes);
+
+        Builder = new FortniteReplayBuilder();
+        ReadReplay(archive);
+
+        return Builder.Build(Replay);
+    }
+
     private string _branch;
     public int Major { get; set; }
     public int Minor { get; set; }

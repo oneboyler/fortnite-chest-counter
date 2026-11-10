@@ -113,6 +113,9 @@ sealed class TrayApp : ApplicationContext
             Visible = true,
         };
         _tray.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ToggleVisible(); };
+        // the saved games couldn't be read: say what was done about it (the damaged file is kept, never overwritten)
+        if (_watcher.Scanner.LoadProblem is string problem)
+            _tray.ShowBalloonTip(15000, "Chest Counter: saved games", problem.Length > 250 ? problem[..250] + "…" : problem, ToolTipIcon.Warning);
 
         _watcher.Changed += QueueRefresh;
         _watcher.GameAdded += m => OnUi(() => OnGameAdded(m));
@@ -213,6 +216,9 @@ sealed class TrayApp : ApplicationContext
     /// <summary>Another copy of the app was started: show the overlay instead.</summary>
     public void ShowFromOtherInstance() => OnUi(() => { if (!_overlay.Visible) ToggleVisible(); });
 
+    /// <summary>The installer or uninstaller asked this copy to close ("Chest Counter.exe" --exit).</summary>
+    public void ExitFromOtherInstance() => OnUi(Exit);
+
     void OnUi(Action a)
     {
         try { if (!_overlay.IsDisposed) _overlay.BeginInvoke(a); }
@@ -262,7 +268,7 @@ sealed class TrayApp : ApplicationContext
     {
         if (Stats.SkipReason(m, Stats.CurrentSeason(_watcher.Snapshot.Append(m))) is string why)
         {
-            _flash = new Flash($"{why}, not counted", OverlayForm.Dim, DateTime.Now.AddSeconds(10));
+            _flash = new Flash($"{why}, not counted", OverlayForm.Dim, DateTime.Now.AddSeconds(20), Counted: false, ShowText: true);
             RefreshView();
             return;
         }
@@ -271,7 +277,7 @@ sealed class TrayApp : ApplicationContext
         var treasure = c.TreasureChests.SelectMany(x => x.Items).Concat(c.TreasureInLobby)
             .Where(i => Stats.IsTreasure(i, _treasure)).Distinct().Select(Stats.Pretty).ToList();
         _flash = treasure.Count > 0
-            ? new Flash($"+{n} TREASURE!", OverlayForm.Gold, DateTime.Now.AddMinutes(5))
+            ? new Flash($"+{n} TREASURE!", OverlayForm.Gold, DateTime.Now.AddMinutes(5), ShowText: true)
             : new Flash($"+{n}", OverlayForm.Green, DateTime.Now.AddSeconds(20));
         RefreshView();
 

@@ -8,8 +8,9 @@ HOW TO USE
   Chest Counter.exe   Double-click. A small see-through overlay appears on top of
                       the game and a chest icon appears in the tray. Leave it running. A few seconds
                       after every game ends it reads the replay, adds the game and
-                      flashes "+67" next to the count. (It can't count during a game:
-                      Fortnite keeps the replay locked until the game ends.)
+                      turns LAST GAME green for a moment. Treasure, or a game that
+                      isn't counted, gets a line of text at the bottom. (It can't count
+                      during a game: Fortnite keeps the replay locked until the game ends.)
 
     F8                Hide / show the overlay.
     Ctrl+F8           Switch view: full, a graph of chests per game (bars = each
@@ -28,7 +29,9 @@ HOW TO USE
                       Windowed Fullscreen, explains the keys, and offers Start with Windows.
 
     Overlay           top:    LAST GAME (green right after it's counted), TOTAL CHESTS
-                      middle: per mode: chests, games, best game, p/g (per game)
+                      middle: per mode: chests, games, best game, p/g (per game),
+                              then the same for this session (the games you played
+                              back to back, or since "New session" in the menu)
                       bottom: GAMES, AVERAGE (chests per game), BEST GAME (all modes), TREASURES
                       A small dot in the top-right corner: gold = you're in a game,
                       green = it's reading the game that just ended.
@@ -61,7 +64,8 @@ UPDATES
 
 WHERE THINGS ARE
   Chest Counter.exe   The app.
-  data\matches.json   Every game it has read.
+  data\matches.json   Every game it has read. A safety copy from one save earlier
+                      is kept next to it as matches.json.bak.
   data\matches.csv    One row per game. Opens in Excel / Google Sheets.
   data\treasure.txt   What counts as "treasure". Edit it, then restart the app.
   data\settings.json  Window position, keys and tray options.
@@ -73,7 +77,16 @@ WHERE THINGS ARE
 
 Replays are read from %LOCALAPPDATA%\FortniteGame\Saved\Demos.
 Replay recording must be on in Fortnite (Settings > Game > Replays).
-Nothing to install: unzip the folder anywhere (not inside Program Files) and run it.
+Two ways to get it, same program:
+  ChestCounter-Setup.exe       Installs it for you (no admin needed) with a Start menu
+                               entry. To remove it: Windows Settings > Apps > Installed
+                               apps > Chest Counter > Uninstall. It asks whether to keep
+                               your counted games.
+  ChestCounter-win-x64.zip     Nothing to install: unzip the folder anywhere (not inside
+                               Program Files) and run it. To remove it: tray icon > untick
+                               "Start with Windows", then Exit, then delete the folder.
+Moving from the zip to the installed one: copy your old data folder over the new one
+(tray icon > Open data folder shows where it is) before the first game.
 Windows may say "Windows protected your PC" the first time, because the app isn't
 signed. Click "More info" > "Run anyway".
 Everything stays on your PC. It only goes online to see if there's a new

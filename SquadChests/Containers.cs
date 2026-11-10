@@ -71,7 +71,8 @@ public class BootyChestV2Export : ContainerExport { }
 // Checked and left out on purpose (Nov 2026, 102 replays):
 //   Tiered_Chest_5_Child: never opened by anyone in 15 sightings, only broken -> decoration, not a lootable chest.
 //   BGA_DelilahTreasureHuntAnimatedChest, BP_ExtractionSite_Chest_Relic, BGA_ExtractionPointGameplay_Chest: never searchable.
-//   Loot cannons, supply drops, ammo boxes, barrels, crates: not chests.
+//   Loot cannons, supply drops, barrels, crates: not chests.
+//   Ammo boxes (Tiered_Ammo_Athena) and food boxes (FoodBox_Produce_Athena): tracked for a while, dropped as not needed.
 
 public static class ChestKinds
 {

@@ -96,12 +96,16 @@ HOW IT COUNTS
   Chests      Normal, rare and relic chests, buried treasure and booty chests.
               Not ammo boxes, supply drops or loot cannons.
   Opened      Exact. The replay records who opened every chest.
-  Destroyed   The replay doesn't say who broke a chest, so the tool works it out:
+  Destroyed   The replay names who broke each chest, whether with a rocket, the
+              pickaxe, a boat driven through it, or by breaking the floor under it.
+              That player gets it. Only when it names nobody does the tool work it out:
                 - a rocket (boat rocket / rocket launcher) blew up at the chest
                   just before it broke -> whoever fired it
                 - a recorded hit on the chest -> that player
                 - otherwise whoever was standing within 6 m (best guess)
-              Chests broken with nobody/no rocket nearby are not credited.
+              A chest that was opened first and broken later counts once, as opened.
+  Once each   A chest counts once. Opening a chest, going far away and coming back
+              to it doesn't count it again.
   Season      Count of the season treasures (gizmos, jam tracks, the car...)
   treasure    that came out of YOUR chests. Every prize gives your character a
               "prize handler" in the replay. A squad shares its prizes, so a

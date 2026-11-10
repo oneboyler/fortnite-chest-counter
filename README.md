@@ -39,7 +39,8 @@ Right-click the tray icon for the full report, Start with Windows, and more.
 
 - **Which chests:** normal chests, rare chests, relic chests, buried treasure and booty chests. Not ammo boxes, supply drops or loot cannons.
 - **Opened chests:** exact. The replay records who opened every chest.
-- **Destroyed chests:** worked out from rockets, hits, or whoever was standing closest.
+- **Destroyed chests:** the replay names who broke each chest (rocket, pickaxe, a boat driven through it, the floor under it going). Only when it names nobody is it worked out from rockets, hits, or whoever was standing closest.
+- **Once each:** opening a chest, going far away and coming back doesn't count it again. A chest you opened and then broke counts once.
 - **Season treasure:** every prize gives your character a hidden "prize handler" in the replay.
   - Prizes that line up with one of your own chests count as yours.
   - Teammates' finds (a squad shares prizes) are listed separately in the full report.

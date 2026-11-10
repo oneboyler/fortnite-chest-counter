@@ -20,13 +20,21 @@ public class LootReader : ReplayReader
     readonly Dictionary<uint, string> _stateToId = new();        // player-state actor guid -> epic id / bot id
     readonly Dictionary<uint, int> _stateToTeam = new();
     readonly Dictionary<uint, PawnTrack> _pawnTracks = new();    // pawn actor guid -> location history
-    readonly Dictionary<uint, ChestState> _chests = new();       // chest actor guid -> state
+    // A chest's actor guid is NOT its identity: every time a chest goes out of range and comes back, the replay
+    // shows it under a new guid, repeating "already searched" and who searched it. So chests are tracked by where
+    // they are on the map, and only a change (closed -> open, closed -> broken) counts.
+    readonly List<ChestState> _chests = new();                    // one entry per open / break that counts
+    readonly Dictionary<uint, ChestTrack> _chestByGuid = new();   // chest actor guid -> the chest it is a sighting of
+    readonly Dictionary<string, ChestTrack> _chestByPath = new(); // map-placed chests, by their path name
+    readonly List<ChestTrack> _spawnedChests = new();             // spawned chests (buried, relic...), by spawn spot
+    readonly Dictionary<uint, PrizeState> _prizes = new();        // special-prize chest animation actor guid -> what it said
     readonly Dictionary<uint, PickupInfo> _pickups = new();      // pickup actor guid -> first sighting
     readonly Dictionary<uint, (uint Pawn, float T)> _lastHit = new(); // object guid -> last pawn that damaged it
     readonly Dictionary<uint, Rocket> _rockets = new();          // rocket actor guid -> who fired it / where it blew up
     readonly Dictionary<uint, (uint Rocket, float T)> _blastHits = new(); // object guid -> rocket whose explosion hit it
 
     public HashSet<string> UnknownChestGroups { get; } = new();
+    public HashSet<string> UnknownPrizeGroups { get; } = new();
     const string TreasureHandler = "/DelilahTreasureHuntGameplay/Gameplay/Abilities/PrizeHandlers/GA_TreasureHandler_Generic";
     bool _gotTreasure;
     List<double> _treasureTimes = new();
@@ -112,15 +120,18 @@ public class LootReader : ReplayReader
                 break;
 
             case ContainerExport c when ActorOf(channelIndex) is uint chestGuid:
-                if (!_chests.TryGetValue(chestGuid, out var chest))
-                {
-                    chest = new ChestState { Kind = ChestKinds.Of(c), FirstSeen = _frameTime, FirstSeenSearched = c.bAlreadySearched == true };
-                    _chests[chestGuid] = chest;
-                }
-                if (c.ReplicatedLootTier is int tier) chest.Tier = tier;
-                if (c.SearchingPawn is uint sp && sp != 0) chest.SearchingPawn = sp;
-                if (c.bAlreadySearched == true && chest.SearchedAt == null) chest.SearchedAt = _frameTime;
-                if (c.bDestroyed == true && chest.DestroyedAt == null) chest.DestroyedAt = _frameTime;
+                var firstSight = !_chestByGuid.TryGetValue(chestGuid, out var chest);
+                if (firstSight) _chestByGuid[chestGuid] = chest = TrackFor(chestGuid, Channels[channelIndex]?.Actor, c);
+                ChestUpdate(chest!, chestGuid, firstSight, c);
+                break;
+
+            case PrizeChestExport pz when ActorOf(channelIndex) is uint prizeGuid:
+                if (!_prizes.TryGetValue(prizeGuid, out var prize))
+                    _prizes[prizeGuid] = prize = new PrizeState { Time = _frameTime, Variant = pz is PrizeChestRareExport ? "Rare" : "" };
+                if (pz.OpeningPawn is uint op && op != 0) prize.Pawn = op;
+                else if (pz.Instigator is uint ins && ins != 0) prize.Pawn ??= ins;
+                if (pz.Tier is int prizeTier) prize.Tier = prizeTier;
+                if (pz.bSuccess is bool ok) prize.Success = ok;
                 break;
 
             case FortPickup pk when ActorOf(channelIndex) is uint pickupGuid:
@@ -145,6 +156,69 @@ public class LootReader : ReplayReader
         }
     }
 
+    /// <summary>The chest this actor is a sighting of: an already known one that came back into range, or a new one.</summary>
+    ChestTrack TrackFor(uint guid, Actor? actor, ContainerExport c)
+    {
+        var kind = ChestKinds.Of(c);
+        if (actor?.ActorNetGUID.IsDynamic() != true)
+        {
+            // Map-placed: the path name is the same every time (and in every match).
+            if (!_netGuidCache.NetGuidToPathName.TryGetValue(guid, out var path) || string.IsNullOrEmpty(path))
+                return new ChestTrack { Kind = kind };
+            if (!_chestByPath.TryGetValue(path, out var placed)) _chestByPath[path] = placed = new ChestTrack { Kind = kind };
+            return placed;
+        }
+        // Spawned: no name, but it comes back at the same spot (a dug-up buried chest sits 1.2 m higher).
+        if (actor.Location is not FVector at) return new ChestTrack { Kind = kind };
+        foreach (var s in _spawnedChests)
+        {
+            if (s.Kind == kind && Math.Abs(s.Spawn!.X - at.X) <= 50 && Math.Abs(s.Spawn.Y - at.Y) <= 50 && Math.Abs(s.Spawn.Z - at.Z) <= 400)
+                return s;
+        }
+        var spawned = new ChestTrack { Kind = kind, Spawn = at };
+        _spawnedChests.Add(spawned);
+        return spawned;
+    }
+
+    void ChestUpdate(ChestTrack chest, uint guid, bool firstSight, ContainerExport c)
+    {
+        if (c.ReplicatedLootTier is int tier) chest.Tier = tier;
+        uint? pawn = c.SearchingPawn is uint sp && sp != 0 ? sp : null;
+        var broken = c.bDestroyed == true;
+
+        // Shown closed under a new guid: a chest we haven't seen, or one that refilled while it was out of range.
+        if (firstSight && c.bAlreadySearched != true && !broken) { chest.IsOpen = false; chest.IsBroken = false; chest.Open = null; }
+
+        if (c.bAlreadySearched == true && !broken)
+        {
+            if (!chest.IsOpen && !chest.IsBroken)
+            {
+                chest.IsOpen = true;
+                chest.Open = new ChestState { Track = chest, Guid = guid, SearchedAt = _frameTime, SearchingPawn = pawn, FirstSeenSearched = firstSight };
+                _chests.Add(chest.Open);
+            }
+            else if (pawn != null && chest.Open is { SearchingPawn: null } shown) shown.SearchingPawn = pawn;   // same open, seen again
+        }
+        else if (c.bAlreadySearched == false)
+        {
+            // Chests refill a few minutes after being opened; the next open is a new one.
+            if (!chest.IsBroken) { chest.IsOpen = false; chest.Open = null; }
+        }
+        else if (pawn != null && !broken && chest.Open is { SearchingPawn: null } waiting)
+        {
+            waiting.SearchingPawn = pawn;   // who opened it arrives late when that player wasn't in range yet
+        }
+
+        if (broken)
+        {
+            // Breaking a chest that was already opened gives nothing, so it isn't a second chest.
+            // The same update names the pawn that broke it (rocket, pickaxe, vehicle, collapse).
+            if (!chest.IsOpen && !chest.IsBroken)
+                _chests.Add(new ChestState { Track = chest, Guid = guid, DestroyedAt = _frameTime, NamedDestroyer = pawn });
+            chest.IsBroken = true; chest.IsOpen = false; chest.Open = null;
+        }
+    }
+
     protected override void Cleanup()
     {
         // Season treasure (gizmo, jam track, car...): every treasure you get hands you a new prize-handler ability.
@@ -163,6 +237,12 @@ public class LootReader : ReplayReader
                 && !_netFieldParser.WillReadType(kv.Key))
             {
                 UnknownChestGroups.Add(kv.Key);
+            }
+            // A special-prize animation of a kind we haven't met (a rarer prize may have its own).
+            if (kv.Key.Contains("TreasureHuntAnimatedChest", StringComparison.OrdinalIgnoreCase)
+                && kv.Key.EndsWith("_C", StringComparison.Ordinal) && !_netFieldParser.WillReadType(kv.Key))
+            {
+                UnknownPrizeGroups.Add(kv.Key);
             }
         }
         base.Cleanup();
@@ -228,6 +308,7 @@ public class LootReader : ReplayReader
         r.HumanCount = lobby.Count(p => !p.IsBot);
         r.MaxPlayers = replay.GameData?.MaxPlayers;
         foreach (var u in UnknownChestGroups) r.Warnings.Add($"Unknown chest type not counted: {u}");
+        foreach (var u in UnknownPrizeGroups) r.Warnings.Add($"Special prize of a kind not seen before: {u}");
 
         // Names from the base reader's player list (keyed by epic id / bot id).
         var names = new Dictionary<string, (string Name, bool Bot)>();
@@ -264,18 +345,18 @@ public class LootReader : ReplayReader
 
         // Opened chests: the opener's position at that moment stands in for the chest's position
         // (map-placed chests don't send their own location).
-        foreach (var c in _chests.Values)
+        foreach (var c in _chests)
         {
-            if (c.SearchedAt is float st) c.Pos = PawnPosAt(c.SearchingPawn, st);
+            if (c.SearchedAt is float st && !c.FirstSeenSearched) c.Pos = PawnPosAt(c.SearchingPawn, st);
         }
 
         // Link loot that flew out of a container to the chest it came from:
         // a chest opened/destroyed just before the pickup appeared, near where the loot started flying.
         var events = new List<LootEvent>();
-        foreach (var c in _chests.Values)
+        foreach (var c in _chests)
         {
-            bool seenLive(float t) => !(c.FirstSeenSearched && t == c.FirstSeen);
-            if (c.SearchedAt is float so && seenLive(so)) events.Add(new LootEvent { Chest = c, T = so, Pos = c.Pos, Destroy = false });
+            // A chest that was already open when it came into view was opened earlier, somewhere else in time.
+            if (c.SearchedAt is float so) { if (!c.FirstSeenSearched) events.Add(new LootEvent { Chest = c, T = so, Pos = c.Pos, Destroy = false }); }
             else if (c.DestroyedAt is float sd) events.Add(new LootEvent { Chest = c, T = sd, Pos = null, Destroy = true });
         }
         foreach (var pk in _pickups.Values.Where(p => p.FromContainer && p.Item != null && p.DroppedByPawn == null).OrderBy(p => p.Time))
@@ -298,19 +379,34 @@ public class LootReader : ReplayReader
             if (best.Destroy && best.Pos is null) best.Pos = best.Chest.Pos = pk.Pos;
         }
 
-        // Destroyed chests have no "who" in the replay, so work it out, most reliable first:
+        // Who broke a chest. The update that breaks it names the pawn behind it, and that is used when it's there
+        // (it agreed with the rocket check below on 1,430 of 1,439 chests). The older checks still run: they say
+        // what it was broken with, and they are the fallback when no pawn is named:
         //   1. a recorded damage hit on the chest            -> that player
         //   2. a rocket explosion that lists the chest as hit -> whoever fired the rocket
         //   3. a rocket that blew up within 8 m of the chest just before it broke -> whoever fired it
         //   4. otherwise the closest player within 6 m (a guess)
-        foreach (var (guid, c) in _chests.Where(kv => kv.Value.DestroyedAt != null && kv.Value.SearchedAt == null))
+        foreach (var c in _chests.Where(x => x.DestroyedAt != null))
         {
+            WorkOutDestroyer(c);
+            if (c.NamedDestroyer is uint named && PlayerOfPawn(named) is string namedId)
+            {
+                if (PlayerOfPawn(c.DestroyerPawnGuess) != namedId) c.DestroyedWith = null;   // that was someone else's rocket
+                c.DestroyerPawnGuess = named;
+                c.DestroyerExact = true;
+                c.DestroyerDistance = null;
+            }
+        }
+
+        void WorkOutDestroyer(ChestState c)
+        {
+            var guid = c.Guid;
             var t = c.DestroyedAt!.Value;
             if (_lastHit.TryGetValue(guid, out var hit) && hit.T >= t - 5 && hit.T <= t + 1)
             {
                 c.DestroyerPawnGuess = hit.Pawn;
                 c.DestroyerExact = true;
-                continue;
+                return;
             }
             if (_blastHits.TryGetValue(guid, out var blast) && blast.T >= t - 3 && blast.T <= t + 1
                 && _rockets.TryGetValue(blast.Rocket, out var hitBy) && hitBy.Instigator is uint inst1)
@@ -318,7 +414,7 @@ public class LootReader : ReplayReader
                 c.DestroyerPawnGuess = inst1;
                 c.DestroyerExact = true;
                 c.DestroyedWith = hitBy.Kind;
-                continue;
+                return;
             }
             if (c.Pos is not null)
             {
@@ -335,10 +431,10 @@ public class LootReader : ReplayReader
                     c.DestroyerPawnGuess = near.Instigator;
                     c.DestroyerExact = true;
                     c.DestroyedWith = near.Kind;
-                    continue;
+                    return;
                 }
             }
-            if (c.Pos is null) continue;
+            if (c.Pos is null) return;
             uint? bestPawn = null; double bestD = 600;    // 6 m: about melee range plus loot spread
             foreach (var (pawn, track) in _pawnTracks)
             {
@@ -350,16 +446,15 @@ public class LootReader : ReplayReader
             if (bestPawn != null) c.DestroyerDistance = Math.Round(bestD / 100, 1);
         }
 
-        foreach (var c in _chests.Values)
+        foreach (var c in _chests)
         {
-            if (c.SearchedAt == null && c.DestroyedAt == null) continue;
             var opened = c.SearchedAt != null;
             var byPawn = opened ? c.SearchingPawn : c.DestroyerPawnGuess;
             var byId = PlayerOfPawn(byPawn);
             r.Chests.Add(new ChestRecord
             {
-                Kind = c.Kind,
-                Tier = c.Tier,
+                Kind = c.Track.Kind,
+                Tier = c.Track.Tier,
                 Time = Math.Round((c.SearchedAt ?? c.DestroyedAt)!.Value, 1),
                 Opened = opened,
                 Destroyed = !opened,
@@ -374,6 +469,25 @@ public class LootReader : ReplayReader
             });
         }
         r.Chests.Sort((a, b) => a.Time.CompareTo(b.Time));
+
+        // Special prizes. The animation is one short-lived actor; if it is ever shown twice (out of range and
+        // back), the same player's same kind within half a minute is the same prize.
+        r.SpecialPrizes = new();
+        foreach (var p in _prizes.Values.OrderBy(x => x.Time))
+        {
+            var byId = PlayerOfPawn(p.Pawn);
+            if (r.SpecialPrizes.Any(e => e.ById == byId && e.Variant == p.Variant && p.Time - e.Time < 30)) continue;
+            r.SpecialPrizes.Add(new PrizeEvent
+            {
+                Time = Math.Round(p.Time, 1),
+                Variant = p.Variant,
+                Tier = p.Tier,
+                Success = p.Success,
+                ById = byId,
+                ByName = byId != null && names.TryGetValue(byId, out var pn) ? pn.Name : null,
+                BySquad = ownerTeam != null && TeamOfPawn(p.Pawn) == ownerTeam,
+            });
+        }
 
         // Every distinct item that appeared anywhere in the lobby (as seen by this replay).
         r.LobbyItems = _pickups.Values.Where(p => p.Item != null)
@@ -410,21 +524,41 @@ public class LootReader : ReplayReader
         }
     }
 
-    class ChestState
+    /// <summary>One chest on the map, across every guid the replay shows it under.</summary>
+    class ChestTrack
     {
         public string Kind = "Chest";
         public int? Tier;
-        public float FirstSeen;
-        public bool FirstSeenSearched;
+        public FVector? Spawn;       // spawned chests only
+        public bool IsOpen, IsBroken;
+        public ChestState? Open;     // the open that is showing right now, so a late "who" can still be filled in
+    }
+
+    /// <summary>One open or one break of a chest: what ends up as a <see cref="ChestRecord"/>.</summary>
+    class ChestState
+    {
+        public ChestTrack Track = null!;
+        public uint Guid;            // the chest actor's guid at that moment (hits and blasts refer to it)
+        public bool FirstSeenSearched;   // it was already open the first time this chest came into view
         public uint? SearchingPawn;
         public float? SearchedAt;
         public float? DestroyedAt;
+        public uint? NamedDestroyer; // the pawn the replay names in the update that broke it
         public uint? DestroyerPawnGuess;
         public bool DestroyerExact;
         public double? DestroyerDistance;
         public string? DestroyedWith;
         public FVector? Pos;
         public List<string> Items = new();
+    }
+
+    class PrizeState
+    {
+        public float Time;
+        public string Variant = "";
+        public uint? Pawn;       // who opened the chest
+        public int? Tier;
+        public bool? Success;
     }
 
     class LootEvent

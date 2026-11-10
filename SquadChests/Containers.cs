@@ -86,6 +86,33 @@ public static class ChestKinds
     };
 }
 
+// The animated chest that plays when a chest gives a special prize (not a gizmo). It names who opened it.
+// Seen three times so far (Nov 2026): twice the plain one (one of them the day the user got a loading screen)
+// and once the _Rare one, in a replay whose owner got the Pirate Shop Access token at that moment. The prize
+// itself is never named: PrizeTemplateId is in the field list but was not sent in any of the three.
+// Not settled: whether "Rare" / Tier describes the prize or the kind of chest it came out of (the _Rare one
+// came from a vault rare chest). Tier is not the chest's loot tier: a tier-2 normal chest gave Tier 0.
+public abstract class PrizeChestExport : INetFieldExportGroup
+{
+    [NetFieldExport("OpeningPawn", RepLayoutCmdType.PropertyObject)]
+    public uint? OpeningPawn { get; set; }
+
+    [NetFieldExport("Instigator", RepLayoutCmdType.PropertyObject)]
+    public uint? Instigator { get; set; }
+
+    [NetFieldExport("bSuccess", RepLayoutCmdType.PropertyBool)]
+    public bool? bSuccess { get; set; }
+
+    [NetFieldExport("Tier", RepLayoutCmdType.PropertyInt)]
+    public int? Tier { get; set; }
+}
+
+[NetFieldExportGroup("/DelilahTreasureHuntGameplay/Gameplay/Actors/BGA_DelilahTreasureHuntAnimatedChest.BGA_DelilahTreasureHuntAnimatedChest_C", minimalParseMode: ParseMode.Minimal)]
+public class PrizeChestPlainExport : PrizeChestExport { }
+
+[NetFieldExportGroup("/DelilahTreasureHuntGameplay/Gameplay/Actors/BGA_DelilahTreasureHuntAnimatedChest_Rare.BGA_DelilahTreasureHuntAnimatedChest_Rare_C", minimalParseMode: ParseMode.Minimal)]
+public class PrizeChestRareExport : PrizeChestExport { }
+
 // Special pickups that use their own actor class instead of the normal FortPickupAthena.
 [NetFieldExportGroup("/SpritePosters/Blueprints/Items/Booty/B_Pickup_SpritePosters_Booty.B_Pickup_SpritePosters_Booty_C", minimalParseMode: ParseMode.Minimal)]
 public class BootyPickupExport : FortniteReplayReader.Models.NetFieldExports.FortPickup { }

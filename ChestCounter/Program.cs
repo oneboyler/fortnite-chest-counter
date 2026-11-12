@@ -54,7 +54,8 @@ static class Program
             using var form = new OverlayForm();
             form.SetView(OverlayModel.Build(sum, inGame != null ? SquadChests.GameWatcher.InGameStatus : SquadChests.GameWatcher.WatchingStatus,
                 null, inGame, null, flash, args.Contains("--hint") ? HotKey.Hint(HotKey.Defaults) : null, OverlayForm.Dim, now,
-                args.Contains("--graph") ? Settings.PageGraph : args.Contains("--compact") ? Settings.PageCompact : Settings.PageFull));
+                args.Contains("--graph") ? Settings.PageGraph : args.Contains("--month") ? Settings.PageMonth
+                : args.Contains("--compact") ? Settings.PageCompact : Settings.PageFull));
             using var bmp = form.Snapshot();
             bmp.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
             return;

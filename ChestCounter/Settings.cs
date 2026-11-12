@@ -12,7 +12,7 @@ sealed class Settings
     public bool OverlayVisible { get; set; } = true;
     /// <summary>Overlay page, the "switch view" key (Ctrl+F8) cycles: full numbers, graph, compact.</summary>
     public int Page { get; set; }
-    public const int PageFull = 0, PageCompact = 1, PageGraph = 2, PageCount = 3;
+    public const int PageFull = 0, PageCompact = 1, PageGraph = 2, PageMonth = 3, PageCount = 4;
     /// <summary>Windows pop-up after each game. The overlay already flashes "+N", so off by default.</summary>
     public bool NotifyAfterGame { get; set; }
     /// <summary>Set by "New session"; games before this don't count toward the session.</summary>

@@ -29,11 +29,11 @@ On the first start, a setup window checks two things and explains the keys:
 | --- | --- |
 | F8 | Hide / show the overlay |
 | Shift+F8 | Move it: drag it with the mouse, then Shift+F8 again to lock it |
-| Ctrl+F8 | Switch view: full, a graph of chests per game, or compact (just the main numbers) |
+| Ctrl+F8 | Switch view: full, a graph of chests per game, this month as a calendar (chests per day), or compact (just the main numbers) |
 
 To use other keys, right-click the tray icon > **Change keys**, click a key and press the new one. Any key or a mouse side button works, with or without Ctrl/Shift/Alt.
 
-Right-click the tray icon for the full report, Start with Windows, and more.
+Right-click the tray icon for the full report, Start with Windows, and more. The first line of that menu shows which version you have, and whether it's up to date.
 
 ## What it counts
 

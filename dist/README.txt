@@ -15,16 +15,21 @@ HOW TO USE
     F8                Hide / show the overlay.
     Ctrl+F8           Switch view: full, a graph of chests per game (bars = each
                       game, gold line = average of your last 10 games, dashed line =
-                      all-time average, shows your last 100 games) and compact (last
-                      game, total chests, games, best game, treasures).
+                      all-time average, shows your last 100 games), this month as a
+                      calendar (the chests of each day in its box; gold = best day, gold
+                      outline = today; a game belongs to the day it started on) and
+                      compact (last game, total chests, games, best game, treasures).
     Shift+F8          Move mode: drag it with the mouse, right-click it for the menu.
                       Shift+F8 again locks it; then clicks go straight through it.
                       The keys only read whether they're held, so the game still gets them.
     Other keys        Tray icon > Change keys: click a key, then press the new one (any key
                       or a mouse side button, with or without Ctrl/Shift/Alt).
-    Tray icon         Left-click = hide/show. Right-click = menu: Show graph, New session,
-                      Compact view, Windows pop-up after each game, Start with Windows, Full report,
-                      Change keys, Setup and help, open the replay/data folder, Exit.
+    Tray icon         Left-click = hide/show. Right-click = menu: Show graph, Month view,
+                      New session, Compact view, Windows pop-up after each game, Start with
+                      Windows, Full report, Change keys, Setup and help, open the replay/data
+                      folder, Exit.
+    Which version     The first line of the tray menu says it, e.g. "Chest Counter v1.7
+                      (up to date)". Hovering over the tray icon shows it too.
     First start       A setup window checks that Fortnite records replays and runs in
                       Windowed Fullscreen, explains the keys, and offers Start with Windows.
 

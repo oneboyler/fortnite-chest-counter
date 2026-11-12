@@ -71,8 +71,12 @@ sealed class OverlayForm : Form
             sb.Append('#').Append(Status); C(StatusColor);
             sb.Append(Hint); C(HintColor); C(Dot);
             if (Graph != null) sb.Append('#').Append(string.Join(",", Graph)).Append(GraphAvg).Append(GraphTrend.Count > 0 ? GraphTrend[^1] : 0);
+            if (Month != null) sb.Append("#m").Append(Month.First.Ticks).Append(Month.Today).Append(string.Join(",", Month.Chests)).Append(string.Join(",", Month.Games));
             return sb.ToString();
         }
+
+        /// <summary>Set = show this month as a calendar instead of the numbers: chests on each day.</summary>
+        public MonthView? Month;
 
         /// <summary>Set = show the graph instead of the numbers: chests in each game, oldest first.</summary>
         public List<int>? Graph;
@@ -82,7 +86,12 @@ sealed class OverlayForm : Form
         public double GraphAvg;
     }
 
-    const TextFormatFlags Flags = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoClipping;
+    /// <summary>One calendar month. Chests and Games have one entry per day (index 0 = the 1st).</summary>
+    /// <param name="First">The 1st of the month.</param>
+    /// <param name="Today">Day of the month that is today, or 0 when it's another month.</param>
+    public sealed record MonthView(DateTime First, int[] Chests, int[] Games, int Today, DayOfWeek WeekStart);
+
+    const TextFormatFlags Flags =TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoClipping;
 
     View _view = new();
     bool _moving;
@@ -285,14 +294,17 @@ sealed class OverlayForm : Form
     Size Render(Graphics? g)
     {
         // The graph view takes exactly the space the numbers would, so switching doesn't move anything.
+        // The month view is at least that wide; its height is whatever the calendar needs.
         var size = RenderNumbers(null);
+        if (_view.Month != null) size = RenderMonth(null, size.Width);
         if (g == null) return size;
 
         // glass background: rounded, see-through gradient, thin light edge (gold while moving)
         var smooth = g.SmoothingMode;
         Glass.Panel(g, size, Px(12), GlassTopAlpha, GlassBottomAlpha, _moving ? Gold : Glass.Edge, _moving ? Px(2) : 1);
 
-        if (_view.Graph == null) RenderNumbers(g);
+        if (_view.Month != null) RenderMonth(g, size.Width);
+        else if (_view.Graph == null) RenderNumbers(g);
         else RenderGraph(g, size);
 
         if (_view.Dot is Color dot)
@@ -434,6 +446,107 @@ sealed class OverlayForm : Form
             }
             DrawStr(g, text, _fSmall, Dim, lx + sw + Px(4), legendY);
         }
+    }
+
+    static readonly string[] DayNames = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+    /// <summary>
+    /// This month as a calendar: the chests of each day in its box (darker box = more chests, gold = best day,
+    /// gold outline = today), the month's total top right and a summary line under it.
+    /// </summary>
+    Size RenderMonth(Graphics? g, int minWidth)
+    {
+        EnsureFonts();
+        var v = _view;
+        var m = v.Month!;
+        int border = Px(2), padX = Px(12), padY = Px(8), cellGap = Px(2);
+        var days = m.Chests.Length;
+        var hintLines = v.Hint?.Split('\n') ?? [];
+
+        // seven columns, each wide enough for a four-digit day
+        var cellW = Math.Max(Px(36), Measure("8888", _fValue).Width + Px(6));
+        var width = Math.Max(minWidth, 7 * cellW + 6 * cellGap + 2 * (padX + border));
+        int x0 = border + padX, right = width - padX - border;
+        cellW = (right - x0 - 6 * cellGap) / 7;
+        var gridW = 7 * cellW + 6 * cellGap;
+        var gx = x0 + (right - x0 - gridW) / 2;
+        var cellH = _fSmall.Height + _fValue.Height + Px(3);
+        int y = border + padY;
+
+        // title row: month on the left, its total in gold on the right
+        var fTitle = Sized(_fMid, _fMid.Size * 0.8f);
+        var total = m.Chests.Sum();
+        DrawStr(g, m.First.ToString("MMMM yyyy", System.Globalization.CultureInfo.InvariantCulture).ToUpperInvariant(), fTitle, Fg, x0, y);
+        var totalText = total.ToString("N0");
+        DrawRight(g, totalText, fTitle, Gold, right, y);
+        DrawRight(g, "chests  ", _fText, Dim, right - Measure(totalText, fTitle).Width, y + fTitle.Height - _fText.Height - Px(1));
+        y += fTitle.Height + Px(8);
+
+        // weekday names
+        for (var c = 0; c < 7; c++)
+        {
+            var name = DayNames[((int)m.WeekStart + c) % 7];
+            DrawStr(g, name, _fSmall, Dim, gx + c * (cellW + cellGap) + (cellW - Measure(name, _fSmall).Width) / 2, y);
+        }
+        y += _fSmall.Height + Px(3);
+
+        // the days
+        var offset = ((int)m.First.DayOfWeek - (int)m.WeekStart + 7) % 7;
+        var weeks = (offset + days + 6) / 7;
+        var best = m.Chests.DefaultIfEmpty(0).Max();
+        for (var d = 1; d <= days; d++)
+        {
+            var slot = offset + d - 1;
+            var cx = gx + slot % 7 * (cellW + cellGap);
+            var cy = y + slot / 7 * (cellH + cellGap);
+            var n = m.Chests[d - 1];
+            var future = m.Today > 0 && d > m.Today;
+            if (g != null)
+            {
+                // more chests = a stronger box; a day without games is barely there
+                var fill = n > 0 ? Color.FromArgb(70 + (int)(150.0 * n / Math.Max(1, best)), BarColor) : Color.FromArgb(future ? 5 : 12, 255, 255, 255);
+                using (var b = new SolidBrush(fill)) g.FillRectangle(b, cx, cy, cellW, cellH);
+                if (d == m.Today)
+                {
+                    using var pen = new Pen(Gold, 1);
+                    g.DrawRectangle(pen, cx, cy, cellW - 1, cellH - 1);
+                }
+            }
+            DrawStr(g, d.ToString(), _fSmall, d == m.Today ? Gold : future ? Color.FromArgb(110, Dim) : Dim, cx + Px(3), cy + Px(1));
+            if (n > 0)
+            {
+                var text = n.ToString();
+                DrawStr(g, text, _fValue, n == best ? Gold : Fg, cx + (cellW - Measure(text, _fValue).Width) / 2, cy + cellH - _fValue.Height - Px(1));
+            }
+        }
+        y += weeks * (cellH + cellGap) - cellGap + Px(7);
+
+        // summary: days and games played on the left, the average of those days on the right
+        // (the best day is the gold one in the calendar)
+        var played = m.Chests.Count(c => c > 0);
+        if (played == 0) DrawStr(g, "no counted games this month", _fSmall, Dim, x0, y);
+        else
+        {
+            DrawStr(g, $"{played} day{(played == 1 ? "" : "s")} played  ·  {m.Games.Sum():N0} games", _fSmall, Dim, x0, y);
+            DrawRight(g, $"{(double)total / played:N0} a day", _fSmall, Dim, right, y);
+        }
+        y += _fSmall.Height;
+
+        // status + hint, like the other views
+        if (v.Status != null)
+        {
+            y += Px(5);
+            DrawStr(g, v.Status, _fText, v.StatusColor, x0, y);
+            y += _fText.Height;
+        }
+        if (hintLines.Length > 0)
+        {
+            y += Px(4);
+            foreach (var l in hintLines) { DrawStr(g, l, _fSmall, v.HintColor, x0, y); y += _fSmall.Height; }
+        }
+        // a status or hint wider than the calendar widens the panel (the next pass lays out with that width)
+        var textW = hintLines.Select(l => Measure(l, _fSmall).Width).Append(Measure(v.Status ?? "", _fText).Width).Max() + 2 * (padX + border);
+        return new Size(Math.Max(width, textW), y + padY + border);
     }
 
     Size RenderNumbers(Graphics? g)

@@ -102,6 +102,22 @@ static class OverlayModel
             v.GraphAvg = s.PerGame;
         }
 
+        if (page == Settings.PageMonth)
+        {
+            // this month, a day at a time. A game belongs to the day it started on.
+            var first = new DateTime(now.Year, now.Month, 1);
+            var days = DateTime.DaysInMonth(now.Year, now.Month);
+            int[] chests = new int[days], played = new int[days];
+            foreach (var g in s.All)
+            {
+                if (g.Match.Started is not DateTime start || start.Year != now.Year || start.Month != now.Month) continue;
+                chests[start.Day - 1] += g.Chests;
+                played[start.Day - 1]++;
+            }
+            v.Month = new OverlayForm.MonthView(first, chests, played, now.Day,
+                System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.FirstDayOfWeek);
+        }
+
         // status only when something is going on
         var (text, color) = StatusText(status, progress, inGameSince, now);
         // in a game / reading the game that just ended: only a small dot in the corner, no extra line

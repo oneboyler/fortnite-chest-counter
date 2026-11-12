@@ -13,7 +13,10 @@ sealed class TrayApp : ApplicationContext
     readonly OverlayForm _overlay;
     readonly NotifyIcon _tray;
     readonly ContextMenuStrip _menu;
-    readonly ToolStripMenuItem _miShow, _miMove, _miCompact, _miGraph, _miNotify, _miStartup, _miUpdate, _miAutoUpdate;
+    readonly ToolStripMenuItem _miShow, _miMove, _miCompact, _miGraph, _miMonth, _miNotify, _miStartup, _miUpdate, _miAutoUpdate, _miVersion;
+
+    /// <summary>"v1.7" (or "v1.7.1"): the same form as the release tags.</summary>
+    static string VersionText => "v" + (Updater.Current.Build > 0 ? Updater.Current.ToString(3) : Updater.Current.ToString(2));
     readonly ToolStripSeparator _updateSep = new() { Visible = false };
     readonly System.Windows.Forms.Timer _keys, _clock, _updateTimer;
     Updater.Release? _update;
@@ -44,6 +47,9 @@ sealed class TrayApp : ApplicationContext
         // pages: full / compact / graph (the switch-view key cycles through them)
         _miCompact = new ToolStripMenuItem("Compact view", null, (_, _) => SetPage(_settings.Page == Settings.PageCompact ? Settings.PageFull : Settings.PageCompact));
         _miGraph = new ToolStripMenuItem("Show graph", null, (_, _) => SetPage(_settings.Page == Settings.PageGraph ? Settings.PageFull : Settings.PageGraph));
+        _miMonth = new ToolStripMenuItem("Month view (chests per day)", null, (_, _) => SetPage(_settings.Page == Settings.PageMonth ? Settings.PageFull : Settings.PageMonth));
+        // which version this is, at the top of the menu; "(up to date)" is added once GitHub has confirmed it
+        _miVersion = new ToolStripMenuItem($"Chest Counter {VersionText}") { Enabled = false };
         _miNotify = new ToolStripMenuItem("Windows pop-up after each game", null, (_, _) =>
         {
             _settings.NotifyAfterGame = !_settings.NotifyAfterGame;
@@ -65,8 +71,8 @@ sealed class TrayApp : ApplicationContext
         _menu = new ContextMenuStrip();
         _menu.Items.AddRange(new ToolStripItem[]
         {
-            _miUpdate, _updateSep,
-            _miShow, _miMove, _miCompact, _miGraph,
+            _miVersion, _miUpdate, new ToolStripSeparator(),
+            _miShow, _miMove, _miCompact, _miGraph, _miMonth,
             new ToolStripMenuItem("New session", null, (_, _) => NewSession()),
             new ToolStripSeparator(),
             _miNotify, _miStartup, _miAutoUpdate,
@@ -85,12 +91,13 @@ sealed class TrayApp : ApplicationContext
             _miMove.Checked = _overlay.Moving;
             _miCompact.Checked = _settings.Page == Settings.PageCompact;
             _miGraph.Checked = _settings.Page == Settings.PageGraph;
+            _miMonth.Checked = _settings.Page == Settings.PageMonth;
             _miNotify.Checked = _settings.NotifyAfterGame;
             _miStartup.Checked = StartWithWindows.IsOn();
             _miAutoUpdate.Checked = _settings.CheckForUpdates;
             _miShow.ShortcutKeyDisplayString = _hotkeys[HotKey.Hide].ToString();
             _miMove.ShortcutKeyDisplayString = _hotkeys[HotKey.Move].ToString();
-            _miCompact.ShortcutKeyDisplayString = _miGraph.ShortcutKeyDisplayString = _hotkeys[HotKey.Page].ToString();
+            _miCompact.ShortcutKeyDisplayString = _miGraph.ShortcutKeyDisplayString = _miMonth.ShortcutKeyDisplayString = _hotkeys[HotKey.Page].ToString();
         };
 
         // ---- overlay ----
@@ -152,7 +159,13 @@ sealed class TrayApp : ApplicationContext
         Updater.Release? r;
         try { r = await Updater.CheckAsync(); }
         catch { return; }   // offline, GitHub down...: try again later
-        if (r == null || !Updater.IsNewer(r)) return;
+        if (r == null) return;
+        if (!Updater.IsNewer(r))
+        {
+            _miVersion.Text = $"Chest Counter {VersionText} (up to date)";
+            return;
+        }
+        _miVersion.Text = $"Chest Counter {VersionText} (update available)";
         _update = r;
         _updateFoundAt = DateTime.Now;
         _miUpdate.Text = $"Update to {r.Tag} (new!)";
@@ -260,7 +273,7 @@ sealed class TrayApp : ApplicationContext
 
         _overlay.SetView(OverlayModel.Build(_sum, _watcher.Status, _watcher.ScanProgress, _watcher.InGameSince,
             _settings.SessionStart, _flash, hint, hintColor, DateTime.Now, _settings.Page));
-        var tip = _sum.Games > 0 ? $"Chest Counter: {_sum.Chests:N0} chests, {_sum.PerGame:F1}/game" : "Chest Counter";
+        var tip = _sum.Games > 0 ? $"Chest Counter {VersionText}: {_sum.Chests:N0} chests, {_sum.PerGame:F1}/game" : $"Chest Counter {VersionText}";
         _tray.Text = tip.Length > 63 ? tip[..63] : tip;
     }
 
@@ -344,8 +357,8 @@ sealed class TrayApp : ApplicationContext
         RefreshView();
     }
 
-    // the switch-view key goes full -> graph -> compact -> full
-    static readonly int[] PageOrder = [Settings.PageFull, Settings.PageGraph, Settings.PageCompact];
+    // the switch-view key goes full -> graph -> month -> compact -> full
+    static readonly int[] PageOrder = [Settings.PageFull, Settings.PageGraph, Settings.PageMonth, Settings.PageCompact];
     void NextPage() => SetPage(PageOrder[(Array.IndexOf(PageOrder, _settings.Page) + 1) % PageOrder.Length]);
 
     // Where the middle of the overlay is, so switching views keeps it centered on the same spot

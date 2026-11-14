@@ -58,6 +58,10 @@ WHAT COUNTS
   (you alone, or with a friend). Real matches always have 75+ players and bots.
   A game you save and rename in Fortnite is only counted once.
 
+  A game you leave before it starts is left out too, so it doesn't show up as a
+  0-chest game: one you quit while everyone was still waiting on the starting
+  island, or during the bus ride before you were eliminated or touched a chest.
+
   Only normal Battle Royale (build and zero build) and Ranked count, and only
   this season (the newest Fortnite version among your games). Reload, Blitz,
   LTMs, Creative and older seasons are left out; the full report lists them.

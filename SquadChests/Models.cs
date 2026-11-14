@@ -24,8 +24,9 @@ public class MatchResult
     /// <remarks>7 was skipped: an unreleased experiment (ammo/food boxes) used it, and games saved while it was on
     /// carry that number. 8: chests are told apart by where they are, not by actor guid (a chest that came back
     /// into range was counted again), and a broken chest goes to the pawn the replay names. 9: special prizes
-    /// (<see cref="SpecialPrizes"/>).</remarks>
-    public const int CurrentReaderVersion = 9;
+    /// (<see cref="SpecialPrizes"/>). 10: how far the match got (<see cref="MaxGamePhase"/>), to leave out games
+    /// that were quit before they started.</remarks>
+    public const int CurrentReaderVersion = 10;
     public int ReaderVersion { get; set; }
     /// <summary>You got at least one season treasure (gizmo, jam track, car...) this game. Null = read by an older version.</summary>
     public bool? GotTreasure { get; set; }
@@ -52,6 +53,11 @@ public class MatchResult
     /// shows them yet.
     /// </summary>
     public List<PrizeEvent>? SpecialPrizes { get; set; }
+    /// <summary>
+    /// How far the match got before the replay ended (the game's own phase number: 2 = everyone still waiting on
+    /// the starting island, 3 = battle bus, 4 = storm circles, 5 = match over). Null = read by an older version.
+    /// </summary>
+    public int? MaxGamePhase { get; set; }
     /// <summary>Everyone in the match, players and bots. Null for matches read by an older version.</summary>
     public int? PlayerCount { get; set; }
     public int? HumanCount { get; set; }

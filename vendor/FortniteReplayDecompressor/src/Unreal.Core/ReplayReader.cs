@@ -50,6 +50,12 @@ public abstract class ReplayReader<T> where T : Replay, new()
     /// </summary>
     protected const int MAX_GUID_COUNT = 2048;
 
+    /// <summary>
+    /// No class has anywhere near this many replicated fields (the biggest have a few thousand). A higher count
+    /// means the data being read is garbage, and must not be used as an array size.
+    /// </summary>
+    protected const uint MaxNetFieldExports = 100_000;
+
     protected ILogger _logger;
     protected T Replay { get; set; }
     protected ParseMode _parseMode;
@@ -689,6 +695,11 @@ public abstract class ReplayReader<T> where T : Replay, new()
             PathNameIndex = archive.ReadIntPacked(),
             NetFieldExportsLength = archive.ReadIntPacked(),
         };
+        if (archive.IsError || group.NetFieldExportsLength > MaxNetFieldExports)
+        {
+            archive.SetError();
+            group.NetFieldExportsLength = 0;
+        }
         group.NetFieldExports = new NetFieldExport[group.NetFieldExportsLength];
 
         for (var i = 0; i < group.NetFieldExportsLength; i++)
@@ -750,6 +761,13 @@ public abstract class ReplayReader<T> where T : Replay, new()
             {
                 var pathName = archive.ReadFString();
                 var numExports = archive.ReadIntPacked();
+
+                if (archive.IsError || numExports > MaxNetFieldExports)
+                {
+                    _logger?.LogWarning("ReadNetFieldExports: bad export count {numExports} for group {pathName}, skipping the rest", numExports, pathName);
+                    archive.SetError();
+                    return;
+                }
 
                 if (!_netGuidCache.NetFieldExportGroupMap.TryGetValue(pathName, out group))
                 {
@@ -892,12 +910,27 @@ public abstract class ReplayReader<T> where T : Replay, new()
         for (var i = 0; i < numLayoutCmdExports; i++)
         {
             var pathNameIndex = bitArchive.ReadIntPacked();
+
+            // UE stops here when the bunch is in error. Without it, a garbled bunch (seen in a 43.10 replay, 0.7 s in)
+            // gives counts in the billions: an 11 GB array and a loop that never ends.
+            if (bitArchive.IsError)
+            {
+                break;
+            }
+
             NetFieldExportGroup? group;
 
             if (bitArchive.ReadBit())
             {
                 var pathName = bitArchive.ReadFString();
                 var numExports = bitArchive.ReadUInt32();
+
+                if (bitArchive.IsError || numExports > MaxNetFieldExports)
+                {
+                    _logger?.LogWarning("ReceiveNetFieldExportsCompat: bad export count {numExports} for group {pathName}, dropping the bunch", numExports, pathName);
+                    bitArchive.SetError();
+                    break;
+                }
 
                 if (!_netGuidCache.NetFieldExportGroupMap.TryGetValue(pathName, out group))
                 {

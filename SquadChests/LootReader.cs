@@ -16,6 +16,7 @@ public class LootReader : ReplayReader
     // ----- raw state collected while reading -----
     float _frameTime;                                            // replay time (s) of the frame being read
     uint? _recorderState;                                        // player-state actor of whoever recorded the replay
+    int? _maxGamePhase;                                          // how far the match got while this replay was recording
     readonly Dictionary<uint, uint> _pawnToState = new();        // pawn actor guid -> player-state actor guid
     readonly Dictionary<uint, string> _stateToId = new();        // player-state actor guid -> epic id / bot id
     readonly Dictionary<uint, int> _stateToTeam = new();
@@ -60,6 +61,7 @@ public class LootReader : ReplayReader
     // Peek at the frame time, then let the base class read the frame as usual.
     public override void ReadDemoFrameIntoPlaybackPackets(FArchive archive)
     {
+        if (_abandoned) throw new OperationCanceledException();
         var pos = archive.Position;
         if (archive.NetworkVersion >= NetworkVersionHistory.HISTORY_MULTIPLE_LEVELS) archive.ReadInt32();
         _frameTime = archive.ReadSingle();
@@ -78,6 +80,11 @@ public class LootReader : ReplayReader
         {
             case GameState gs:
                 if (gs.RecorderPlayerState?.Value is uint rec && rec != 0) _recorderState ??= rec;
+                if (gs.GamePhase is int phase && phase > (_maxGamePhase ?? -1)) _maxGamePhase = phase;   // older replays
+                break;
+
+            case GamePhaseExport gp:
+                if (gp.GamePhase is int logicPhase && logicPhase > (_maxGamePhase ?? -1)) _maxGamePhase = logicPhase;
                 break;
 
             case FortPlayerState ps when ActorOf(channelIndex) is uint stateGuid:
@@ -250,16 +257,26 @@ public class LootReader : ReplayReader
 
     // ----- turning raw state into a result -----
 
+    /// <summary>
+    /// A replay reads in a few seconds. Past this the reader is stuck on something it can't cope with, and the
+    /// replay is given up on (it happened once: one garbled packet kept the app on the same game for good).
+    /// </summary>
+    static TimeSpan ReadTimeout { get; set; } = TimeSpan.FromMinutes(3);
+
+    /// <summary>Set once nobody is waiting for this read any more, so it stops instead of working on for nothing.</summary>
+    volatile bool _abandoned;
+
     public static MatchResult Read(string path)
     {
         var fi = new FileInfo(path);
         // Marked with the reader version right away: a replay that can't be parsed is then tried once,
         // not again on every check (it's tried again when the file changes or the reader gets newer).
-        var result = new MatchResult
+        MatchResult Blank() => new()
         {
             File = fi.Name, Size = fi.Length, LastWrite = fi.LastWriteTimeUtc,
             ReaderVersion = MatchResult.CurrentReaderVersion,
         };
+        var result = Blank();
 
         // Step 1: get the file into memory, once. Not being able to open it says nothing about the replay itself.
         byte[] bytes;
@@ -277,18 +294,30 @@ public class LootReader : ReplayReader
             return result;
         }
 
-        // Step 2: parse it straight from that one copy.
-        try
+        // Step 2: parse it straight from that one copy. On a thread of its own, so a replay the parser gets stuck on
+        // costs ReadTimeout and is then recorded as unreadable, instead of holding up every game after it.
+        var reader = new LootReader();
+        var worker = new Thread(() =>
         {
-            var reader = new LootReader();
-            var replay = reader.ReadReplay((ReadOnlyMemory<byte>)bytes);
-            reader.Fill(result, replay);
-        }
-        catch (Exception ex)
-        {
-            result.Error = $"{ex.GetType().Name}: {ex.Message}";
-        }
-        return result;
+            try
+            {
+                var replay = reader.ReadReplay((ReadOnlyMemory<byte>)bytes);
+                reader.Fill(result, replay);
+            }
+            catch (Exception ex)
+            {
+                result.Error = $"{ex.GetType().Name}: {ex.Message}";
+            }
+        })
+        { IsBackground = true, Priority = Thread.CurrentThread.Priority, Name = "ReplayRead" };
+        worker.Start();
+        if (worker.Join(ReadTimeout)) return result;
+
+        reader._abandoned = true;
+        try { worker.Priority = ThreadPriority.Lowest; } catch (ThreadStateException) { }
+        var stuck = Blank();   // not the one the worker may still be writing to
+        stuck.Error = $"Reading took over {ReadTimeout.TotalMinutes:0.#} minutes, so this replay was given up on";
+        return stuck;
     }
 
     void Fill(MatchResult r, FortniteReplayReader.Models.FortniteReplay replay)
@@ -307,6 +336,7 @@ public class LootReader : ReplayReader
         r.PlayerCount = lobby.Count;
         r.HumanCount = lobby.Count(p => !p.IsBot);
         r.MaxPlayers = replay.GameData?.MaxPlayers;
+        r.MaxGamePhase = _maxGamePhase;   // stays null if the replay never said (then the length decides)
         foreach (var u in UnknownChestGroups) r.Warnings.Add($"Unknown chest type not counted: {u}");
         foreach (var u in UnknownPrizeGroups) r.Warnings.Add($"Special prize of a kind not seen before: {u}");
 

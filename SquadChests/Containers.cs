@@ -113,6 +113,15 @@ public class PrizeChestPlainExport : PrizeChestExport { }
 [NetFieldExportGroup("/DelilahTreasureHuntGameplay/Gameplay/Actors/BGA_DelilahTreasureHuntAnimatedChest_Rare.BGA_DelilahTreasureHuntAnimatedChest_Rare_C", minimalParseMode: ParseMode.Minimal)]
 public class PrizeChestRareExport : PrizeChestExport { }
 
+// How far the match has got. Fortnite 43.00 keeps this on its own object, not on the game state any more.
+// GamePhase: 2 = everyone waiting on the starting island, 3 = battle bus, 4 = storm circles, 5 = match over.
+[NetFieldExportGroup("/Game/Athena/Athena_GamePhaseLogic.Athena_GamePhaseLogic_C", minimalParseMode: ParseMode.Minimal)]
+public class GamePhaseExport : INetFieldExportGroup
+{
+    [NetFieldExport("GamePhase", RepLayoutCmdType.Enum)]
+    public int? GamePhase { get; set; }
+}
+
 // Special pickups that use their own actor class instead of the normal FortPickupAthena.
 [NetFieldExportGroup("/SpritePosters/Blueprints/Items/Booty/B_Pickup_SpritePosters_Booty.B_Pickup_SpritePosters_Booty_C", minimalParseMode: ParseMode.Minimal)]
 public class BootyPickupExport : FortniteReplayReader.Models.NetFieldExports.FortPickup { }

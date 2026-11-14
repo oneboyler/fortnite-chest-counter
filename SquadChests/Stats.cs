@@ -103,10 +103,27 @@ public static class Stats
     public static int? CurrentSeason(IEnumerable<MatchResult> all) =>
         Finished(all).Where(m => !IsCustom(m)).Select(SeasonOf).Max();
 
+    /// <summary>The game's phase number for "the battle bus has taken off".</summary>
+    public const int BusPhase = 3;
+    public const string LeftEarly = "left before the start";
+
+    /// <summary>
+    /// You quit before the match really began, so it isn't a 0-chest game: you left while everyone was still
+    /// waiting on the starting island, or during the bus ride without having been eliminated or touched a chest.
+    /// </summary>
+    public static bool LeftBeforeStart(MatchResult m)
+    {
+        var played = m.TeamPlacement != null || m.Chests.Any(c => c.ById != null && c.ById == m.OwnerId);
+        if (m.MaxGamePhase is int phase) return phase < BusPhase || (phase == BusPhase && !played);
+        // Read by an older version: under 100 seconds nobody has landed, opened a chest and left again.
+        return !played && m.Chests.Count == 0 && m.LengthSeconds < 100;
+    }
+
     /// <summary>Why a game isn't counted, or null if it is.</summary>
     public static string? SkipReason(MatchResult m, int? season) =>
         IsCustom(m) ? "custom game"
         : !IsCountedMode(m) ? "other mode"
+        : LeftBeforeStart(m) ? LeftEarly
         : season != null && SeasonOf(m) is int s && s < season ? "older season"
         : null;
 
@@ -260,6 +277,8 @@ public static class Stats
         var skipped = Skipped(all);
         if (skipped.TryGetValue("other mode", out var om))
             L($"  ({om} game(s) in other modes are left out: {string.Join(", ", OtherModePlaylists(all).Select(p => p.Replace("Playlist_", "")))})");
+        if (skipped.TryGetValue(LeftEarly, out var le))
+            L($"  ({le} game(s) you left before the match started are left out)");
         if (skipped.TryGetValue("older season", out var os))
             L($"  ({os} game(s) from an older season are left out; counting season v{CurrentSeason(all)})");
         L();

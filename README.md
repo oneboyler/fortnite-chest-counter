@@ -45,7 +45,7 @@ Right-click the tray icon for the full report, Start with Windows, and more. The
   - Prizes that line up with one of your own chests count as yours.
   - Teammates' finds (a squad shares prizes) are listed separately in the full report.
   - The replay doesn't say which prize it was. Awards other than gizmos drop once each, so nearly all are gizmos.
-- **Which games:** normal Battle Royale (build and zero build) and Ranked, from the current season only. Custom games, Reload, Blitz, LTMs, Creative and older seasons are left out (the full report lists them).
+- **Which games:** normal Battle Royale (build and zero build) and Ranked, from the current season only. Custom games, Reload, Blitz, LTMs, Creative and older seasons are left out (the full report lists them). So is a game you quit before it started (on the starting island, or on the bus before doing anything), so it doesn't count as a 0-chest game.
 
 ## Updates
 

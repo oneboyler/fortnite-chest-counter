@@ -39,6 +39,7 @@ switch (cmd)
         if (r.Error != null) Console.WriteLine("ERROR " + r.Error);
         foreach (var w in r.Warnings) Console.WriteLine("WARN " + w);
         Console.WriteLine($"Owner: {r.OwnerName} ({r.OwnerId})");
+        Console.WriteLine($"Length: {r.LengthSeconds:F0}s  furthest phase: {r.MaxGamePhase}  left before start: {Stats.LeftBeforeStart(r)}");
         foreach (var s in r.Squad) Console.WriteLine($"  squad: {s.Name} {(s.IsBot ? "[bot]" : "")} {s.Id}");
         Console.WriteLine($"Chest events: {r.Chests.Count}");
         foreach (var c in r.Chests)

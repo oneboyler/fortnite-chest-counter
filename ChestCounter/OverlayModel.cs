@@ -152,8 +152,8 @@ static class OverlayModel
         return ("error (see tray icon)", OverlayForm.Red);
     }
 
-    /// <summary>"Squads (Build)" -> "squads b".</summary>
-    static string Short(string mode) => mode.Replace(" (Build)", " b").ToLowerInvariant();
+    /// <summary>"Squads" -> "squads". Build games are already folded into the same row (Stats.SizeOf).</summary>
+    static string Short(string mode) => mode.ToLowerInvariant();
 
     public static string Duration(TimeSpan t)
     {

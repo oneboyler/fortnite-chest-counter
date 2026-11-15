@@ -47,8 +47,17 @@ public static class Stats
         return lines;
     }
 
-    public static bool IsTreasure(string item, string[] patterns) =>
-        patterns.Any(p => item.Contains(p, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Sprites are everyday finds, so one only counts when a line in treasure.txt asks for sprites by name
+    /// ("Sprite_Variant_Jeweled"), not because its name happens to hold a word meant for the rare prize:
+    /// "Pirate" used to match the Pirate Calamari Sprite and announce it as treasure.
+    /// </summary>
+    public static bool IsTreasure(string item, string[] patterns)
+    {
+        var sprite = IsSprite(item);
+        return patterns.Any(p => item.Contains(p, StringComparison.OrdinalIgnoreCase)
+            && (!sprite || p.Contains("Sprite", StringComparison.OrdinalIgnoreCase)));
+    }
 
     public static bool IsSprite(string item) => item.StartsWith("[Relic] ESD_") && item.Contains("Sprite");
 
@@ -64,12 +73,20 @@ public static class Stats
         return jeweled ? $"{s} (Jeweled)" : s;
     }
 
-    /// <summary>Solo / Duos / Trios / Squads, with " (Build)" for build modes.</summary>
+    /// <summary>
+    /// Solo / Duos / Trios / Squads: what tables that add games up go by. Build and zero build share a row
+    /// (asked for: a couple of build games were taking a row each).
+    /// </summary>
+    public static string SizeOf(MatchResult m) => ModeOf(m).Replace(" (Build)", "");
+
+    /// <summary>Solo / Duos / Trios / Squads, with " (Build)" for build modes. For naming one game.</summary>
     public static string ModeOf(MatchResult m)
     {
+        // Not case-sensitive: build trios is spelled "playlist_trios" in the replay, all lower case.
         var p = m.Playlist ?? "";
-        var size = p.Contains("Solo") ? "Solo" : p.Contains("Duo") ? "Duos" : p.Contains("Trio") ? "Trios" : p.Contains("Squad") ? "Squads" : "Other";
-        return size != "Other" && !p.Contains("NoBuild") ? size + " (Build)" : size;
+        bool Has(string word) => p.Contains(word, StringComparison.OrdinalIgnoreCase);
+        var size = Has("Solo") ? "Solo" : Has("Duo") ? "Duos" : Has("Trio") ? "Trios" : Has("Squad") ? "Squads" : "Other";
+        return size != "Other" && !Has("NoBuild") ? size + " (Build)" : size;
     }
 
     /// <summary>
@@ -218,7 +235,7 @@ public static class Stats
         foreach (var m in matches)
         {
             var c = Count(m, treasure);
-            s.All.Add(new GameStats(m, ModeOf(m), c.MeOpened + c.MeDestroyed, c.MeOpened, c.MeDestroyed));
+            s.All.Add(new GameStats(m, SizeOf(m), c.MeOpened + c.MeDestroyed, c.MeOpened, c.MeDestroyed));
             var items = c.TreasureChests.SelectMany(x => x.Items).Concat(c.TreasureInLobby).Where(i => IsTreasure(i, treasure)).Distinct().Select(Pretty).ToList();
             if (items.Count > 0) s.Treasure.Add((m, string.Join(", ", items)));
         }
@@ -307,7 +324,7 @@ public static class Stats
             L($"SEASON TREASURE");
             L($"  From your chests ...... {tOwn}   in {tKnown.Count(m => m.OwnTreasures > 0)} of {tKnown.Count} games"
               + (tOwn > 0 ? $"   = 1 per {(double)tChests / tOwn:F0} of your chests" : ""));
-            foreach (var g in tKnown.GroupBy(ModeOf).OrderBy(g => ModeOrder(g.Key)))
+            foreach (var g in tKnown.GroupBy(SizeOf).OrderBy(g => ModeOrder(g.Key)))
                 L($"        {g.Key,-22} {g.Sum(m => m.OwnTreasures!.Value)} in {g.Count()} games");
             var best = tKnown.MaxBy(m => m.OwnTreasures!.Value)!;
             if (best.OwnTreasures > 1) L($"    most in one game .... {best.OwnTreasures}   ({best.Started:MMM d HH:mm}, {ModeOf(best).ToLower()})");
@@ -322,7 +339,7 @@ public static class Stats
         // ---------- by mode ----------
         L("BY MODE  (your chests per game)");
         L($"  {"Mode",-14} {"Games",5}   {"Chests",6}   {"Opened",6}   {"Destroyed",9}");
-        foreach (var g in matches.GroupBy(ModeOf).OrderBy(g => ModeOrder(g.Key)))
+        foreach (var g in matches.GroupBy(SizeOf).OrderBy(g => ModeOrder(g.Key)))
         {
             var games = g.Count();
             var mine = g.SelectMany(m => m.Chests.Where(c => c.ById == meId)).ToList();
@@ -341,7 +358,7 @@ public static class Stats
                 mt.Games++;
                 mt.YouWithThem += Chests(m, meId);
                 if (m.TeamPlacement == 1) mt.Wins++;
-                var mode = ModeOf(m);
+                var mode = SizeOf(m);
                 mt.Modes[mode] = mt.Modes.GetValueOrDefault(mode) + 1;
             }
         }
